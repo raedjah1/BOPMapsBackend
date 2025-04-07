@@ -159,20 +159,26 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # AWS S3 configuration for production file storage
+# Disabled in development (DEBUG=True)
 if not DEBUG:
     AWS_ACCESS_KEY_ID = config('AWS_ACCESS_KEY_ID', default='')
     AWS_SECRET_ACCESS_KEY = config('AWS_SECRET_ACCESS_KEY', default='')
     AWS_STORAGE_BUCKET_NAME = config('AWS_STORAGE_BUCKET_NAME', default='')
-    AWS_S3_CUSTOM_DOMAIN = f'{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com'
-    AWS_S3_OBJECT_PARAMETERS = {
-        'CacheControl': 'max-age=86400',
-    }
-    AWS_DEFAULT_ACL = 'public-read'
     
-    # If using S3 for media
-    if config('USE_S3_FOR_MEDIA', default=False, cast=bool):
-        DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
-        MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/'
+    # Only use S3 if all required settings are provided
+    if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_STORAGE_BUCKET_NAME:
+        AWS_S3_CUSTOM_DOMAIN = f'{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com'
+        AWS_S3_OBJECT_PARAMETERS = {
+            'CacheControl': 'max-age=86400',
+        }
+        AWS_DEFAULT_ACL = 'public-read'
+        
+        # If using S3 for media
+        if config('USE_S3_FOR_MEDIA', default=False, cast=bool):
+            DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+            MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/'
+    else:
+        print("WARNING: AWS credentials not fully configured. Using local storage instead.")
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field

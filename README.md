@@ -475,192 +475,128 @@ def determine_pin_rarity():
 
 ## 🔧 Development Setup
 
-### 1. Clone Repository
+### Prerequisites
+
+- Python 3.8+
+- PostgreSQL with PostGIS extension
+- Redis (optional, for caching and background tasks)
+
+### Step 1: Clone the Repository
+
 ```bash
 git clone https://github.com/yourusername/BOPMapsBackend.git
 cd BOPMapsBackend
 ```
 
-### 2. Set Up Virtual Environment
+### Step 2: Set Up the Environment
+
+There are two options for setting up your development environment:
+
+#### Option 1: Automated Setup (Recommended)
+
+```bash
+# Make the setup script executable
+chmod +x setup.sh
+
+# Run the setup script
+./setup.sh
+```
+
+The setup script will:
+- Create and activate a virtual environment
+- Install dependencies
+- Set up environment variables
+- Configure the database
+- Run migrations
+- Create a superuser (if needed)
+- Set up static files
+
+#### Option 2: Manual Setup
+
+1. Create a virtual environment:
 ```bash
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-### 3. Install Requirements
+2. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Set Up PostgreSQL with PostGIS
-- Install PostgreSQL and PostGIS extension
-- Create database: `bopmaps`
-- Enable PostGIS: `CREATE EXTENSION postgis;`
-
-### 5. Configure Environment Variables
-Create a `.env` file in the project root:
-```
-# Django Settings
-SECRET_KEY=your_secret_key_here
-DEBUG=True
-ALLOWED_HOSTS=localhost,127.0.0.1
-
-# Database
-DATABASE_URL=postgis://user:password@localhost:5432/bopmaps
-
-# JWT Settings
-JWT_SECRET_KEY=your_jwt_secret_key
-JWT_ACCESS_TOKEN_LIFETIME=1  # hours
-JWT_REFRESH_TOKEN_LIFETIME=7  # days
-
-# Music APIs
-SPOTIFY_CLIENT_ID=your_spotify_client_id
-SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
-
-APPLE_MUSIC_KEY_ID=your_apple_key_id
-APPLE_MUSIC_TEAM_ID=your_apple_team_id
-APPLE_MUSIC_PRIVATE_KEY=your_apple_private_key
-
-SOUNDCLOUD_CLIENT_ID=your_soundcloud_client_id
-SOUNDCLOUD_CLIENT_SECRET=your_soundcloud_client_secret
-
-# Firebase (for notifications)
-FIREBASE_API_KEY=your_firebase_api_key
-FIREBASE_AUTH_DOMAIN=your_firebase_auth_domain
-FIREBASE_PROJECT_ID=your_firebase_project_id
-FIREBASE_STORAGE_BUCKET=your_firebase_storage_bucket
-FIREBASE_MESSAGING_SENDER_ID=your_firebase_messaging_sender_id
-FIREBASE_APP_ID=your_firebase_app_id
-
-# Media Storage
-MEDIA_STORAGE=local  # or 's3' for production
-AWS_ACCESS_KEY_ID=your_aws_access_key
-AWS_SECRET_ACCESS_KEY=your_aws_secret_key
-AWS_STORAGE_BUCKET_NAME=your_aws_bucket_name
-```
-
-### 6. Run Migrations
+3. Create a `.env` file from the example:
 ```bash
-python manage.py makemigrations
+cp .env.example .env
+# Edit .env with your settings
+```
+
+4. Create a PostgreSQL database with PostGIS:
+```bash
+psql -U postgres
+CREATE DATABASE bopmaps;
+\c bopmaps
+CREATE EXTENSION postgis;
+CREATE EXTENSION postgis_topology;
+\q
+```
+
+5. Run migrations:
+```bash
 python manage.py migrate
 ```
 
-### 7. Create Superuser
+6. Create a superuser:
 ```bash
 python manage.py createsuperuser
 ```
 
-### 8. Run Development Server
+7. Collect static files:
+```bash
+python manage.py collectstatic
+```
+
+### Step 3: Run the Development Server
+
 ```bash
 python manage.py runserver
 ```
 
----
+Access the API at http://localhost:8000/api/
 
-## 🔍 Testing
+Access the admin interface at http://localhost:8000/admin/
 
-### Unit Tests
+## API Documentation
+
+- Interactive API documentation: http://localhost:8000/api/schema/swagger-ui/
+- ReDoc API documentation: http://localhost:8000/api/schema/redoc/
+- Detailed API documentation: See `API_DOCUMENTATION.md`
+
+## Testing
+
+Run the test suite:
+
 ```bash
+# Run all tests
 python manage.py test
+
+# Run tests with specific settings
+python manage.py test --settings=bopmaps.test_settings
 ```
 
-### Test Coverage
-```bash
-coverage run --source='.' manage.py test
-coverage report
+## Project Structure
+
+```
+BOPMapsBackend/
+├── bopmaps/              # Project configuration
+├── users/                # User management app
+├── pins/                 # Music pins app
+├── friends/              # Friend connections app
+├── music/                # Music integration app
+├── gamification/         # Achievements and rewards app
+├── geo/                  # Geospatial services app
+└── manage.py             # Django management script
 ```
 
----
+## License
 
-## 🚀 Deployment
-
-### Docker Setup
-```dockerfile
-FROM python:3.9-slim
-
-# Set environment variables
-ENV PYTHONUNBUFFERED 1
-ENV PYTHONDONTWRITEBYTECODE 1
-
-# Set working directory
-WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-    postgresql-client \
-    gdal-bin \
-    libgdal-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies
-COPY requirements.txt /app/
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy project
-COPY . /app/
-
-# Run gunicorn
-CMD gunicorn bopmaps.wsgi:application --bind 0.0.0.0:$PORT
-```
-
-### Deployment Options
-- **Heroku**: For quick MVP deployment with Heroku Postgres
-- **AWS**: For production scale with RDS (PostgreSQL), ECS, and S3
-- **Digital Ocean**: For mid-scale deployment with managed PostgreSQL
-
-### Scaling Considerations
-- Implement caching for frequently accessed data (Redis)
-- Use read replicas for database as user base grows
-- Set up CDN for static assets
-- Implement rate limiting for API endpoints
-
----
-
-## 🔗 Future Integrations
-
-### AI-powered Music Recommendations
-- Machine learning for personalized pin suggestions based on listening history
-
-### Enhanced Social Features
-- Music sharing challenges and collaborative playlists
-- Virtual music rooms at popular pin locations
-
-### AR Experiences
-- Augmented reality view of pins in physical space
-- Visual effects based on music genre or mood
-
-### Analytics Dashboard
-- For users to track their music discovery journey
-- For admins to monitor platform growth and engagement
-
-### Monetization
-- Premium subscription with advanced features
-- Limited-edition exclusive pin skins
-
----
-
-## 📊 API Documentation
-
-Full API documentation available at:
-- Development: http://localhost:8000/api/docs/
-- Production: https://api.bopmaps.com/docs/
-
-Built with drf-spectacular for OpenAPI 3.0 specification.
-
----
-
-## 👨‍💻 Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Commit changes: `git commit -m 'Add feature'`
-4. Push to branch: `git push origin feature-name`
-5. Submit a pull request
-
----
-
-## 📝 License
-
-Copyright © 2023 BOPMaps Team. All rights reserved. 
+[MIT License](LICENSE) 
