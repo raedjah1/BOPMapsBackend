@@ -98,19 +98,20 @@ def get_trending_pins(days=7, limit=20):
         # Set timeframe
         since = timezone.now() - timedelta(days=days)
         
-        # Get pins with most interactions in the timeframe
-        pins = Pin.objects.filter(
-            # Only include recent pins
-            created_at__gte=since,
-            # Exclude expired pins
-            Q(expiration_date__isnull=True) | Q(expiration_date__gt=timezone.now()),
-            # Only include public pins
-            is_private=False
-        ).annotate(
-            interaction_count=Count('interactions', filter=Q(interactions__created_at__gte=since))
-        ).order_by('-interaction_count', '-created_at')[:limit]
+        # Get pins with most interactions in the timeframe - Complete rewrite
+        recent_pins = Pin.objects.filter(created_at__gte=since)
+        active_pins = recent_pins.filter(Q(expiration_date__isnull=True) | Q(expiration_date__gt=timezone.now()))
+        public_pins = active_pins.filter(is_private=False)
         
-        return pins
+        # Annotate with interaction count
+        trending_pins = public_pins.annotate(
+            interaction_count=Count('interactions', filter=Q(interactions__created_at__gte=since))
+        )
+        
+        # Order and limit
+        result = trending_pins.order_by('-interaction_count', '-created_at')[:limit]
+        
+        return result
         
     except Exception as e:
         logger.error(f"Error in get_trending_pins: {str(e)}")

@@ -20,10 +20,15 @@ from django.conf import settings
 from django.conf.urls.static import static
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 from rest_framework_simplejwt.views import TokenVerifyView
+from django.views.generic.base import RedirectView
+from .admin import bopmaps_admin_site
+
+# Import admin registrations to ensure they're loaded
+from . import admin_registrations
 
 urlpatterns = [
-    # Admin
-    path('admin/', admin.site.urls),
+    # Admin - with custom admin site
+    path('admin/', bopmaps_admin_site.urls),
     
     # API Documentation
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
