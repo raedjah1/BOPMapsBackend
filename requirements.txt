@@ -15,7 +15,7 @@ django-storages==1.14.2
 boto3==1.28.62
 
 # GIS
-django-leaflet==0.29.0
+django-leaflet>=0.28.0
 # GDAL==3.7.2  # Install via homebrew first: brew install gdal
 pyproj==3.6.0
 
@@ -53,8 +53,8 @@ django-celery-beat==2.5.0
 redis==5.0.1
 
 # Websockets for real-time features
-channels==4.0.0
-channels-redis==4.1.0
+channels>=4.0.0
+channels-redis>=4.1.0
 daphne==4.0.0
 
 # Performance & Caching
@@ -75,4 +75,7 @@ factory-boy==3.3.0
 
 # Production
 gunicorn==21.2.0
-uvicorn==0.23.2 
+uvicorn==0.23.2
+
+# GIS packages
+djangorestframework-gis>=1.0.0 

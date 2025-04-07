@@ -7,10 +7,11 @@ from rest_framework import status, viewsets, mixins
 from rest_framework.response import Response
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
+from datetime import timedelta
 
 from .models import Pin, PinInteraction
 from .serializers import PinSerializer, PinGeoSerializer, PinInteractionSerializer
-from .utils import get_nearby_pins, record_pin_interaction, get_trending_pins, check_pin_visibility
+from .utils import get_nearby_pins, record_pin_interaction, get_trending_pins, check_pin_visibility, get_clustered_pins
 
 from bopmaps.views import BaseModelViewSet
 from bopmaps.permissions import IsOwnerOrReadOnly
@@ -53,38 +54,69 @@ class PinViewSet(BaseModelViewSet):
     @action(detail=False, methods=['get'])
     def list_map(self, request):
         """
-        Get pins for map display, optimized for performance
+        Get pins for map display, optimized for performance with clustering
         """
         try:
             queryset = self.get_queryset()
             lat = request.query_params.get('latitude')
             lng = request.query_params.get('longitude')
             radius = request.query_params.get('radius', 1000)
+            zoom = request.query_params.get('zoom', 13)
             
             try:
+                zoom = int(zoom)
                 radius = int(radius)
-                if radius > 5000:  # Limit maximum radius
-                    radius = 5000
+                
+                # Dynamically adjust radius based on zoom level
+                if zoom < 10:
+                    max_radius = 10000
+                elif zoom < 13:
+                    max_radius = 5000
+                else:
+                    max_radius = 3000
+                
+                if radius > max_radius:
+                    radius = max_radius
+                    
             except (ValueError, TypeError):
                 radius = 1000
+                zoom = 13
                 
-            # If location is provided, filter by distance
+            # If location is provided, use clustering approach
             if lat and lng:
                 try:
-                    pins = get_nearby_pins(
+                    result = get_clustered_pins(
                         user=request.user,
                         lat=float(lat),
                         lng=float(lng),
+                        zoom=zoom,
                         radius_meters=radius
                     )
+                    pins = result['pins']
+                    
+                    # Add cluster parameters to response metadata
+                    cluster_params = result['cluster_params']
+                    
                 except (ValueError, TypeError):
                     return create_error_response("Invalid coordinates", status.HTTP_400_BAD_REQUEST)
             else:
                 # No location - return recent pins with a limit
                 pins = queryset.order_by('-created_at')[:100]
+                cluster_params = {
+                    'enabled': True,
+                    'distance': 60,
+                    'max_cluster_radius': 100
+                }
                 
             serializer = self.get_serializer(pins, many=True)
-            return Response(serializer.data)
+            response_data = serializer.data
+            
+            # Include cluster parameters in response
+            return Response({
+                'type': 'FeatureCollection',
+                'features': response_data,
+                'cluster_params': cluster_params
+            })
             
         except Exception as e:
             logger.error(f"Error in list_map: {str(e)}")
@@ -180,6 +212,64 @@ class PinViewSet(BaseModelViewSet):
         Record a share interaction with a pin
         """
         return self._record_interaction(request, pk, 'share')
+    
+    @action(detail=True, methods=['get'])
+    def map_details(self, request, pk=None):
+        """
+        Get detailed pin information for map display with aura visualization settings
+        """
+        try:
+            pin = self.get_object()
+            
+            # Check if the pin is visible to the user
+            if not check_pin_visibility(pin, request.user):
+                return create_error_response("Pin is not available", status.HTTP_404_NOT_FOUND)
+            
+            # Record view interaction if not already viewed in the last hour
+            if not PinInteraction.objects.filter(
+                user=request.user, 
+                pin=pin, 
+                interaction_type='view',
+                created_at__gte=timezone.now() - timedelta(hours=1)
+            ).exists():
+                record_pin_interaction(
+                    user=request.user,
+                    pin=pin,
+                    interaction_type='view'
+                )
+            
+            # Get details with customized serializer for map display
+            serializer = PinSerializer(pin)
+            data = serializer.data
+            
+            # Define color mapping based on music service and rarity
+            service_colors = {
+                'spotify': '#1DB954',
+                'apple': '#FC3C44',
+                'soundcloud': '#FF7700'
+            }
+            
+            rarity_opacity = {
+                'common': 0.6,
+                'uncommon': 0.7,
+                'rare': 0.8,
+                'epic': 0.85,
+                'legendary': 0.9
+            }
+            
+            # Add visualization settings based on pin properties
+            data['visualization'] = {
+                'aura_color': service_colors.get(pin.service, '#3388ff'),
+                'aura_opacity': rarity_opacity.get(pin.rarity, 0.7),
+                'pulse_animation': pin.created_at > (timezone.now() - timedelta(hours=24)),
+                'icon_url': pin.skin.image_url if hasattr(pin, 'skin') and pin.skin and hasattr(pin.skin, 'image_url') else None
+            }
+            
+            return Response(data)
+            
+        except Exception as e:
+            logger.error(f"Error getting pin map details: {str(e)}")
+            return create_error_response(str(e), status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     def _record_interaction(self, request, pk, interaction_type):
         """

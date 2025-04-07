@@ -236,6 +236,13 @@ CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 # Channels Settings
 ASGI_APPLICATION = 'bopmaps.asgi.application'
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    },
+}
+
+# Uncomment this if you're using Redis
 # CHANNEL_LAYERS = {
 #     'default': {
 #         'BACKEND': 'channels_redis.core.RedisChannelLayer',
@@ -251,6 +258,37 @@ LEAFLET_CONFIG = {
     'DEFAULT_ZOOM': 13,
     'MIN_ZOOM': 3,
     'MAX_ZOOM': 18,
+    'SCALE': 'both',  # Display both metric and imperial scale
+    'ATTRIBUTION_PREFIX': 'BOPMaps',
+    'RESET_VIEW': False,  # Don't reset view when adding layers
+    'NO_GLOBALS': False,  # Make global Leaflet variables available
+    'TILES': [
+        ('OSM', 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            'attribution': '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            'maxZoom': 19
+        }),
+        ('Carto Light', 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
+            'attribution': '&copy; <a href="https://carto.com/attribution">CARTO</a>',
+            'maxZoom': 19
+        })
+    ],
+    'PLUGINS': {
+        'MarkerCluster': {
+            'js': ['https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js'],
+            'css': ['https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css', 
+                    'https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css'],
+            'auto-include': True
+        },
+        'HeatMap': {
+            'js': ['https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js'],
+            'auto-include': True
+        },
+        'Locate': {
+            'js': ['https://unpkg.com/leaflet.locatecontrol@0.74.0/dist/L.Control.Locate.min.js'],
+            'css': ['https://unpkg.com/leaflet.locatecontrol@0.74.0/dist/L.Control.Locate.min.css'],
+            'auto-include': True
+        }
+    }
 }
 
 # Cache configuration
@@ -344,6 +382,20 @@ SPECTACULAR_SETTINGS = {
     'COMPONENT_SPLIT_REQUEST': True,
     'SORT_OPERATIONS': False,
 }
+
+# Third-party API Settings
+# Spotify API
+SPOTIFY_CLIENT_ID = config('SPOTIFY_CLIENT_ID', default='')
+SPOTIFY_CLIENT_SECRET = config('SPOTIFY_CLIENT_SECRET', default='')
+
+# Apple Music API
+APPLE_MUSIC_KEY_ID = config('APPLE_MUSIC_KEY_ID', default='')
+APPLE_MUSIC_TEAM_ID = config('APPLE_MUSIC_TEAM_ID', default='')
+APPLE_MUSIC_PRIVATE_KEY = config('APPLE_MUSIC_PRIVATE_KEY', default='')
+
+# SoundCloud API
+SOUNDCLOUD_CLIENT_ID = config('SOUNDCLOUD_CLIENT_ID', default='')
+SOUNDCLOUD_CLIENT_SECRET = config('SOUNDCLOUD_CLIENT_SECRET', default='')
 
 # Security settings for production
 if not DEBUG:

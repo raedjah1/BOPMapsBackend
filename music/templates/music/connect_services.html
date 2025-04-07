@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+
+{% block title %}Connect Music Services{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h2 class="mb-0">Connect Your Music Services</h2>
+                </div>
+                <div class="card-body p-4">
+                    <p class="lead mb-4">Connect your favorite music streaming services to share music on BOPMaps.</p>
+                    
+                    <div class="row">
+                        <!-- Spotify -->
+                        <div class="col-md-6 mb-4">
+                            <div class="card h-100">
+                                <div class="card-body text-center">
+                                    <img src="https://storage.googleapis.com/pr-newsroom-wp/1/2018/11/Spotify_Logo_RGB_Green.png" 
+                                         alt="Spotify" class="img-fluid mb-3" style="max-height: 60px;">
+                                    <h5 class="card-title">Spotify</h5>
+                                    <p class="card-text">Connect your Spotify account to share tracks, albums, and playlists.</p>
+                                    <a href="{% url 'music:spotify-auth' %}" class="btn btn-success">
+                                        Connect Spotify
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Apple Music (Coming Soon) -->
+                        <div class="col-md-6 mb-4">
+                            <div class="card h-100">
+                                <div class="card-body text-center">
+                                    <img src="https://www.apple.com/v/apple-music/s/images/overview/apple_music_logo__1ta25lfuu5uu_large.png" 
+                                         alt="Apple Music" class="img-fluid mb-3" style="max-height: 60px;">
+                                    <h5 class="card-title">Apple Music</h5>
+                                    <p class="card-text">Connect your Apple Music account to share your library.</p>
+                                    <button class="btn btn-secondary" disabled>
+                                        Coming Soon
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- SoundCloud (Coming Soon) -->
+                        <div class="col-md-6 mb-4">
+                            <div class="card h-100">
+                                <div class="card-body text-center">
+                                    <img src="https://developers.soundcloud.com/assets/logo_black-af502da81d7eef564b1e2404776a63ad.png" 
+                                         alt="SoundCloud" class="img-fluid mb-3" style="max-height: 60px;">
+                                    <h5 class="card-title">SoundCloud</h5>
+                                    <p class="card-text">Connect SoundCloud to share tracks from independent artists.</p>
+                                    <button class="btn btn-secondary" disabled>
+                                        Coming Soon
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-4 pt-3 border-top">
+                        <h4>Connected Services</h4>
+                        <div id="connected-services">
+                            <p class="text-muted">Loading your connected services...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Fetch connected services when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        fetch('/api/music/api/services/connected_services/', {
+            headers: {
+                'Authorization': 'Bearer ' + localStorage.getItem('access_token')
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            const servicesContainer = document.getElementById('connected-services');
+            
+            if (data.length === 0) {
+                servicesContainer.innerHTML = '<p>You have not connected any music services yet.</p>';
+                return;
+            }
+            
+            let html = '<ul class="list-group">';
+            data.forEach(service => {
+                const serviceNames = {
+                    'spotify': 'Spotify',
+                    'apple': 'Apple Music',
+                    'soundcloud': 'SoundCloud'
+                };
+                
+                const statusBadge = service.is_active 
+                    ? '<span class="badge bg-success">Active</span>' 
+                    : '<span class="badge bg-warning">Expired</span>';
+                
+                html += `
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        ${serviceNames[service.service_type] || service.service_type} 
+                        ${statusBadge}
+                        <button class="btn btn-sm btn-outline-danger disconnect-btn" 
+                                data-service="${service.service_type}">
+                            Disconnect
+                        </button>
+                    </li>
+                `;
+            });
+            html += '</ul>';
+            
+            servicesContainer.innerHTML = html;
+            
+            // Add event listeners to disconnect buttons
+            document.querySelectorAll('.disconnect-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const service = this.getAttribute('data-service');
+                    disconnectService(service);
+                });
+            });
+        })
+        .catch(error => {
+            console.error('Error fetching connected services:', error);
+            document.getElementById('connected-services').innerHTML = 
+                '<p class="text-danger">Error loading connected services. Please refresh the page or try again later.</p>';
+        });
+    });
+    
+    function disconnectService(service) {
+        if (!confirm(`Are you sure you want to disconnect ${service}?`)) {
+            return;
+        }
+        
+        fetch(`/api/music/api/services/disconnect/${service}/`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': 'Bearer ' + localStorage.getItem('access_token')
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Failed to disconnect service');
+            }
+            return response.json();
+        })
+        .then(data => {
+            alert(`${service} has been disconnected successfully.`);
+            window.location.reload();
+        })
+        .catch(error => {
+            console.error('Error disconnecting service:', error);
+            alert('Error disconnecting service. Please try again.');
+        });
+    }
+</script>
+{% endblock %} 

@@ -142,4 +142,62 @@ def check_pin_visibility(pin, user):
         return False
         
     # Public pins are visible to everyone
-    return True 
+    return True
+
+
+def get_clustered_pins(user, lat, lng, zoom, radius_meters=2000):
+    """
+    Get pins for map display with cluster parameters based on zoom level
+    
+    Args:
+        user: The user making the request
+        lat: Latitude of center
+        lng: Longitude of center
+        zoom: Current map zoom level
+        radius_meters: Search radius in meters
+        
+    Returns:
+        Dict with pins and cluster parameters
+    """
+    from django.contrib.gis.geos import Point
+    
+    try:
+        # Adjust radius based on zoom
+        zoom = int(zoom)
+        if zoom < 12:
+            radius_meters = min(radius_meters, 5000)
+            max_pins = 100
+            cluster_distance = 80
+        elif zoom < 15:
+            radius_meters = min(radius_meters, 2000)
+            max_pins = 200
+            cluster_distance = 50
+        else:
+            radius_meters = min(radius_meters, 1000)
+            max_pins = 300
+            cluster_distance = 30
+        
+        user_location = Point(float(lng), float(lat))
+        
+        # Get pins as usual
+        pins = get_nearby_pins(
+            user=user,
+            lat=float(lat),
+            lng=float(lng),
+            radius_meters=radius_meters,
+            limit=max_pins
+        )
+        
+        # Return pins with clustering parameters
+        return {
+            'pins': pins,
+            'cluster_params': {
+                'enabled': zoom < 16,
+                'distance': cluster_distance,
+                'max_cluster_radius': 120 if zoom < 13 else 80
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in get_clustered_pins: {str(e)}")
+        raise 

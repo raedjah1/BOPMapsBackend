@@ -1,12 +1,30 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-# from .views import MusicTrackViewSet, MusicProviderViewSet  # Uncomment when views are implemented
+from .views import (
+    spotify_auth, 
+    spotify_callback, 
+    connection_success,
+    connect_services,
+    MusicServiceViewSet,
+    SpotifyViewSet,
+    MusicTrackViewSet
+)
 
 router = DefaultRouter()
-# Register your viewsets here:
-# router.register(r'tracks', MusicTrackViewSet, basename='tracks')
-# router.register(r'providers', MusicProviderViewSet, basename='providers')
+# Register viewsets
+router.register(r'services', MusicServiceViewSet, basename='services')
+router.register(r'spotify', SpotifyViewSet, basename='spotify')
+router.register(r'tracks', MusicTrackViewSet, basename='tracks')
 
 urlpatterns = [
-    path('', include(router.urls)),
+    # Main view
+    path('connect/', connect_services, name='connect-services'),
+    
+    # OAuth flow endpoints
+    path('auth/spotify/', spotify_auth, name='spotify-auth'),
+    path('auth/spotify/callback/', spotify_callback, name='spotify-callback'),
+    path('auth/success/', connection_success, name='connection-success'),
+    
+    # API endpoints
+    path('api/', include(router.urls)),
 ] 
