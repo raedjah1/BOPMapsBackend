@@ -1,5 +1,0 @@
-function.zip
-.env
-firebase-service-account.json
-fcm_notification/lambda_package.zip
-trigger_analytics/lambda_package.zip
