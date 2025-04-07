@@ -1,0 +1,31 @@
+branch-defaults:
+  dev2:
+    environment: povstream
+    group_suffix: null
+  mo2025:
+    environment: povbackend
+    group_suffix: null
+  prod:
+    environment: povbackend
+    group_suffix: null
+  work-in-progress:
+    environment: povbackend
+    group_suffix: null
+environment-defaults:
+  pov-backend:
+    branch: null
+    repository: null
+global:
+  application_name: povreality
+  branch: null
+  default_ec2_keyname: aws-eb
+  default_platform: Python 3.9 running on 64bit Amazon Linux 2023
+  default_region: us-east-1
+  include_git_submodules: true
+  instance_profile: null
+  platform_name: null
+  platform_version: null
+  profile: null
+  repository: null
+  sc: git
+  workspace_type: Application

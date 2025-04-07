@@ -1,92 +1,104 @@
 #!/bin/bash
 
-# Colors for output
+# Colors for better readability
 GREEN='\033[0;32m'
-BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}BOPMaps Backend Setup${NC}"
-echo -e "${BLUE}========================================${NC}"
+echo -e "${GREEN}Setting up BOPMaps Backend...${NC}"
 
 # Check if Python is installed
 if ! command -v python3 &> /dev/null; then
-    echo -e "${RED}Python 3 is not installed. Please install Python 3 before continuing.${NC}"
+    echo -e "${RED}Python 3 is not installed. Please install Python 3 and try again.${NC}"
     exit 1
 fi
 
-# Create virtual environment if it doesn't exist
-if [ ! -d "venv" ]; then
-    echo -e "${BLUE}Creating virtual environment...${NC}"
-    python3 -m venv venv
-    echo -e "${GREEN}Virtual environment created.${NC}"
-else
-    echo -e "${GREEN}Virtual environment already exists.${NC}"
+# Check Python version
+PYTHON_VERSION=$(python3 --version | cut -d ' ' -f 2)
+PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d '.' -f 1)
+PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d '.' -f 2)
+
+if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 8 ]); then
+    echo -e "${YELLOW}Warning: Python 3.8 or higher is recommended. You are using Python $PYTHON_VERSION.${NC}"
 fi
 
-# Activate virtual environment
-echo -e "${BLUE}Activating virtual environment...${NC}"
+# Check if PostgreSQL is installed
+if ! command -v psql &> /dev/null; then
+    echo -e "${YELLOW}PostgreSQL is not installed. You'll need to install it for the project to work properly.${NC}"
+fi
+
+# Check if PostGIS is installed
+if ! psql -U postgres -c "SELECT PostGIS_Version();" &> /dev/null; then
+    echo -e "${YELLOW}PostGIS extension is not available. You'll need to install it for the project to work properly.${NC}"
+fi
+
+# Check if virtualenv is installed
+if ! command -v virtualenv &> /dev/null; then
+    echo -e "${YELLOW}virtualenv is not installed. Installing virtualenv...${NC}"
+    pip3 install virtualenv
+fi
+
+# Create virtualenv if it doesn't exist
+if [ ! -d "venv" ]; then
+    echo -e "${GREEN}Creating virtual environment...${NC}"
+    virtualenv venv
+fi
+
+# Activate virtualenv
+echo -e "${GREEN}Activating virtual environment...${NC}"
 source venv/bin/activate
 
-# Check if pip is up to date
-echo -e "${BLUE}Upgrading pip...${NC}"
-pip install --upgrade pip
-
 # Install dependencies
-echo -e "${BLUE}Installing dependencies...${NC}"
+echo -e "${GREEN}Installing dependencies...${NC}"
 pip install -r requirements.txt
 
 # Check if .env file exists
 if [ ! -f ".env" ]; then
-    echo -e "${BLUE}Creating .env file from example...${NC}"
+    echo -e "${GREEN}Creating .env file from template...${NC}"
     cp .env.example .env
-    echo -e "${GREEN}.env file created. Please update it with your settings.${NC}"
-else
-    echo -e "${GREEN}.env file already exists.${NC}"
-fi
-
-# Check if PostgreSQL with PostGIS is installed
-echo -e "${BLUE}Checking for PostgreSQL with PostGIS...${NC}"
-if ! command -v psql &> /dev/null; then
-    echo -e "${RED}PostgreSQL is not installed or not in PATH.${NC}"
-    echo -e "${RED}Please install PostgreSQL with PostGIS and make sure it's in your PATH.${NC}"
-    echo -e "${RED}On macOS: brew install postgresql postgis${NC}"
-    echo -e "${RED}On Ubuntu: sudo apt-get install postgresql postgresql-contrib postgis${NC}"
-else
-    echo -e "${GREEN}PostgreSQL is installed.${NC}"
+    echo -e "${YELLOW}Please update the .env file with your database credentials and other settings.${NC}"
 fi
 
 # Create database if it doesn't exist
-echo -e "${BLUE}Checking if database exists...${NC}"
-if ! psql -lqt | cut -d \| -f 1 | grep -qw bopmaps; then
-    echo -e "${BLUE}Creating database...${NC}"
-    createdb bopmaps
-    psql -d bopmaps -c "CREATE EXTENSION postgis;"
-    echo -e "${GREEN}Database created with PostGIS extension.${NC}"
-else
-    echo -e "${GREEN}Database already exists.${NC}"
+echo -e "${GREEN}Checking database...${NC}"
+if ! psql -U postgres -lqt | cut -d \| -f 1 | grep -qw bopmaps; then
+    echo -e "${GREEN}Creating database...${NC}"
+    psql -U postgres -c "CREATE DATABASE bopmaps;"
+    psql -U postgres -d bopmaps -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+    psql -U postgres -d bopmaps -c "CREATE EXTENSION IF NOT EXISTS postgis_topology;"
 fi
 
 # Run migrations
-echo -e "${BLUE}Running migrations...${NC}"
+echo -e "${GREEN}Running migrations...${NC}"
 python manage.py migrate
 
-# Create superuser if needed
-echo -e "${BLUE}Do you want to create a superuser? (y/n)${NC}"
-read -r create_superuser
+# Create superuser if none exists
+echo -e "${GREEN}Checking if superuser exists...${NC}"
+SUPERUSER_EXISTS=$(python manage.py shell -c "from django.contrib.auth import get_user_model; print(get_user_model().objects.filter(is_superuser=True).exists())")
 
-if [ "$create_superuser" = "y" ]; then
+if [ "$SUPERUSER_EXISTS" == "False" ]; then
+    echo -e "${GREEN}Creating superuser...${NC}"
     python manage.py createsuperuser
 fi
 
+# Run collectstatic
+echo -e "${GREEN}Collecting static files...${NC}"
+python manage.py collectstatic --noinput
+
+# Create media directory if it doesn't exist
+if [ ! -d "media" ]; then
+    echo -e "${GREEN}Creating media directory...${NC}"
+    mkdir -p media
+fi
+
+# Create logs directory if it doesn't exist
+if [ ! -d "logs" ]; then
+    echo -e "${GREEN}Creating logs directory...${NC}"
+    mkdir -p logs
+    touch logs/bopmaps.log
+fi
+
 echo -e "${GREEN}Setup complete!${NC}"
-echo -e "${GREEN}To start the development server:${NC}"
-echo -e "${BLUE}python manage.py runserver${NC}"
-echo ""
-echo -e "${GREEN}To use Docker instead:${NC}"
-echo -e "${BLUE}docker-compose up${NC}"
-echo ""
-echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}Happy coding!${NC}"
-echo -e "${BLUE}========================================${NC}" 
+echo -e "${GREEN}Run 'source venv/bin/activate' to activate the virtual environment.${NC}"
+echo -e "${GREEN}Run 'python manage.py runserver' to start the development server.${NC}" 
