@@ -6,13 +6,19 @@ from django.contrib.auth.decorators import login_required
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 from rest_framework import viewsets, status, serializers
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-
+from django.contrib.auth import get_user_model, login
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.shortcuts import redirect
 import requests
 import json
+import logging
 from datetime import datetime, timedelta
+import uuid
+import string
+import random
 
 from .models import MusicService, RecentTrack
 from .services import MusicServiceAuthMixin, SpotifyService
@@ -24,22 +30,26 @@ from .utils import (
     get_track_details
 )
 
+User = get_user_model()
+logger = logging.getLogger('bopmaps')
+
 # View Functions
 @login_required
 def connect_services(request):
     """Page for connecting music services"""
     return render(request, 'music/connect_services.html')
 
-@login_required
 def spotify_auth(request):
     """Start Spotify OAuth flow"""
     auth_url = SpotifyService.get_auth_url(request)
     return redirect(auth_url)
 
 
-@login_required
 def spotify_callback(request):
-    """Handle Spotify OAuth callback"""
+    """
+    Handle Spotify OAuth callback
+    This function can create a new user if one doesn't exist with the Spotify email
+    """
     error = request.GET.get('error')
     if error:
         return JsonResponse({'error': error})
@@ -54,16 +64,182 @@ def spotify_callback(request):
     if 'error' in tokens_data:
         return JsonResponse({'error': tokens_data['error']})
     
-    # Save tokens to database
-    MusicServiceAuthMixin.save_tokens(request.user, 'spotify', tokens_data)
+    # Create a temporary MusicService object to make API requests
+    temp_service = MusicService(
+        user=None,  # No user assigned yet
+        service_type='spotify',
+        access_token=tokens_data.get('access_token'),
+        refresh_token=tokens_data.get('refresh_token', ''),
+        expires_at=timezone.now() + timedelta(seconds=tokens_data.get('expires_in', 3600))
+    )
+    
+    # Get user profile from Spotify
+    user_profile = SpotifyService.make_api_request(temp_service, 'me')
+    
+    if 'error' in user_profile:
+        return JsonResponse({'error': f"Failed to get Spotify profile: {user_profile['error']}"})
+    
+    # Check if we have a logged-in user
+    if request.user.is_authenticated:
+        # User is already logged in, just connect the service
+        user = request.user
+    else:
+        # No logged-in user, check if a user with this email exists
+        spotify_email = user_profile.get('email')
+        
+        if not spotify_email:
+            return JsonResponse({'error': 'Spotify account does not have an email address'})
+        
+        try:
+            # Try to find user with this email
+            user = User.objects.get(email=spotify_email)
+            # Auto-login the user
+            login(request, user)
+            logger.info(f"User {user.username} logged in via Spotify")
+        except User.DoesNotExist:
+            # User doesn't exist, create a new one
+            try:
+                # Generate a unique username based on Spotify display name
+                display_name = user_profile.get('display_name', '')
+                if not display_name:
+                    display_name = "spotify_user"
+                
+                # Remove spaces and special characters, and make it lowercase
+                base_username = ''.join(e for e in display_name if e.isalnum()).lower()
+                
+                # Check if username exists, if so, add random numbers
+                if User.objects.filter(username=base_username).exists():
+                    random_suffix = ''.join(random.choices(string.digits, k=4))
+                    username = f"{base_username}_{random_suffix}"
+                else:
+                    username = base_username
+                
+                # Create the user with a random password
+                random_password = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
+                
+                # Get profile image if available
+                profile_pic_url = None
+                if user_profile.get('images') and len(user_profile['images']) > 0:
+                    profile_pic_url = user_profile['images'][0].get('url')
+                
+                # Create user
+                user = User.objects.create_user(
+                    username=username,
+                    email=spotify_email,
+                    password=random_password,
+                    # Don't set profile_pic here as it's a URL, not a file
+                )
+                
+                # Set additional fields
+                user.spotify_connected = True
+                
+                # Add Spotify profile info to user bio if available
+                bio_parts = []
+                if display_name:
+                    bio_parts.append(f"Name: {display_name}")
+                if user_profile.get('country'):
+                    bio_parts.append(f"Country: {user_profile.get('country')}")
+                if user_profile.get('product'):
+                    product = user_profile.get('product').capitalize()
+                    bio_parts.append(f"Spotify: {product}")
+                
+                if bio_parts:
+                    user.bio = " | ".join(bio_parts)
+                
+                user.save()
+                
+                # Auto-login the user
+                login(request, user)
+                logger.info(f"New user {username} created and logged in via Spotify")
+            except Exception as e:
+                logger.error(f"Error creating user from Spotify: {str(e)}")
+                return JsonResponse({'error': f"Failed to create user: {str(e)}"})
+    
+    # Save Spotify tokens to user's account
+    user.spotify_connected = True
+    user.save()
+    MusicServiceAuthMixin.save_tokens(user, 'spotify', tokens_data)
     
     # Redirect to success page or frontend app
     return redirect('music:connection-success')
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def callback_handler(request):
+    """
+    Handle OAuth callback from mobile app
+    Accepts a JSON payload with the authorization code and exchanges it for tokens.
+    This is used with the fixed redirect URI workflow.
+    """
+    try:
+        # Get data from request
+        code = request.data.get('code')
+        if not code:
+            return Response({'error': 'No authorization code provided'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create a mock request to pass to exchange_code_for_tokens
+        class MockRequest:
+            def __init__(self):
+                self.build_absolute_uri = lambda x: settings.SPOTIFY_REDIRECT_URI
+        
+        mock_request = MockRequest()
+        
+        # Exchange code for tokens
+        tokens_data = SpotifyService.exchange_code_for_tokens(mock_request, code)
+        
+        if 'error' in tokens_data:
+            logger.error(f"Error exchanging Spotify code: {tokens_data['error']}")
+            return Response({'error': tokens_data['error']}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create a temporary MusicService object to make API requests
+        temp_service = MusicService(
+            user=None,  # No user assigned yet
+            service_type='spotify',
+            access_token=tokens_data.get('access_token'),
+            refresh_token=tokens_data.get('refresh_token', ''),
+            expires_at=timezone.now() + timedelta(seconds=tokens_data.get('expires_in', 3600))
+        )
+        
+        # Get user profile from Spotify
+        user_profile = SpotifyService.make_api_request(temp_service, 'me')
+        
+        if 'error' in user_profile:
+            logger.error(f"Error getting Spotify profile: {user_profile['error']}")
+            return Response(
+                {'error': f"Failed to get Spotify profile: {user_profile['error']}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Use the authenticated user
+        user = request.user
+        
+        # Save Spotify tokens to user's account
+        user.spotify_connected = True
+        user.save()
+        service = MusicServiceAuthMixin.save_tokens(user, 'spotify', tokens_data)
+        
+        return Response({
+            'message': 'Spotify connected successfully',
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'spotify_connected': user.spotify_connected
+            },
+            'service': {
+                'service_type': service.service_type,
+                'expires_at': service.expires_at
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in callback_handler: {str(e)}")
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 @login_required
 def connection_success(request):
-    """Simple success page after connecting a music service"""
+    """Success page after connecting a music service"""
     return render(request, 'music/connection_success.html')
 
 

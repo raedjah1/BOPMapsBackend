@@ -16,7 +16,7 @@ This guide walks you through setting up Spotify integration for your BOPMaps app
    - App name: `BOPMaps` (or your preferred name)
    - App description: `A music geo-social platform for sharing music at specific locations`
    - Website: `http://localhost:8000` (for development) or your production URL
-   - Redirect URI: `http://localhost:8000/api/music/auth/spotify/callback/` (replace with your domain in production)
+   - Redirect URI: `http://localhost:8888/callback`
 5. Check the terms and conditions box and click **Create**
 
 ## Step 2: Get Your Client ID and Secret
@@ -24,7 +24,7 @@ This guide walks you through setting up Spotify integration for your BOPMaps app
 1. After creating your app, you'll be redirected to your app's dashboard
 2. Note down the **Client ID** and **Client Secret**
 3. Click **Edit Settings** and add the redirect URI:
-   - `http://localhost:8000/api/music/auth/spotify/callback/`
+   - `http://localhost:8888/callback`
 4. Click **Save**
 
 ## Step 3: Configure Your Environment Variables

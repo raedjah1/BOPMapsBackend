@@ -13,6 +13,14 @@
                 <div class="card-body p-4">
                     <p class="lead mb-4">Connect your favorite music streaming services to share music on BOPMaps.</p>
                     
+                    {% if not request.user.is_authenticated %}
+                    <div class="alert alert-info mb-4">
+                        <h5>New to BOPMaps?</h5>
+                        <p>You can create a new BOPMaps account instantly by connecting your Spotify account. 
+                           Just click the "Connect Spotify" button below, authorize access, and we'll set up your account automatically!</p>
+                    </div>
+                    {% endif %}
+                    
                     <div class="row">
                         <!-- Spotify -->
                         <div class="col-md-6 mb-4">
@@ -23,7 +31,7 @@
                                     <h5 class="card-title">Spotify</h5>
                                     <p class="card-text">Connect your Spotify account to share tracks, albums, and playlists.</p>
                                     <a href="{% url 'music:spotify-auth' %}" class="btn btn-success">
-                                        Connect Spotify
+                                        {% if request.user.is_authenticated %}Connect Spotify{% else %}Sign in with Spotify{% endif %}
                                     </a>
                                 </div>
                             </div>

@@ -2,7 +2,7 @@
 
 **Version:** 1.0  
 **Lead Devs:** Jah, Mason, Eric, Isaiah, Danny  
-**Stack:** Django REST Framework (Backend) • React (Frontend) • Spotify/Apple/Soundcloud APIs • Geolocation & Leaflet.js Maps
+**Stack:** Django REST Framework (Backend) • Flutter(Frontend) • Spotify/Apple/Soundcloud APIs • Geolocation & Leaflet.js Maps
 
 ---
 
@@ -51,16 +51,735 @@
 
 ---
 
-## ⚙️ Backend Architecture
+## 🎵 Spotify Integration
 
-**Language & Framework:** Python 3.x + Django REST Framework  
-**Database:** PostgreSQL with PostGIS extension  
-**Hosting:** TBD (Heroku, Railway, or AWS likely)  
-**Auth:** Token-based (JWT)  
-**APIs Integrated:**
-- Geolocation API
-- Leaflet.js (Map frontend rendering)
-- Spotify/Apple/Soundcloud APIs (for track embedding, sharing, streaming)
+### Overview
+BOPMaps integrates with the Spotify API to allow users to:
+1. Connect their Spotify accounts via OAuth 2.0
+2. Search for and share Spotify tracks as pins
+3. Access their playlists and recently played tracks
+4. Play previews or open tracks in Spotify
+
+### Setup and Authentication
+1. **OAuth 2.0 Flow**:
+   - Users initiate authentication via `/api/music/auth/spotify/`
+   - After authorizing, Spotify redirects to our callback at `/api/music/auth/spotify/callback/`
+   - Access and refresh tokens are securely stored in the `MusicService` model
+
+2. **Environment Variables**:
+   ```
+   SPOTIFY_CLIENT_ID=your_spotify_client_id
+   SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
+   ```
+
+### API Endpoints
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/music/auth/spotify/` | GET | Initiate Spotify OAuth flow |
+| `/api/music/auth/spotify/callback/` | GET | OAuth callback handler |
+| `/api/music/api/services/` | GET | Get connected music services |
+| `/api/music/api/spotify/playlists/` | GET | Get user's Spotify playlists |
+| `/api/music/api/spotify/playlist/{id}/` | GET | Get playlist details |
+| `/api/music/api/spotify/playlist/{id}/tracks/` | GET | Get playlist tracks |
+| `/api/music/api/spotify/track/{id}/` | GET | Get track details |
+| `/api/music/api/spotify/recently_played/` | GET | Get recently played tracks |
+| `/api/music/api/spotify/search/` | GET | Search Spotify tracks |
+| `/api/music/api/tracks/search/` | GET | Search tracks across all services |
+| `/api/music/api/tracks/recently_played/` | GET | Get recently played across all services |
+
+### Data Models
+The music integration is built around two main models:
+
+1. **MusicService**:
+   ```python
+   class MusicService(models.Model):
+       user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='music_services')
+       service_type = models.CharField(max_length=20, choices=[('spotify', 'Spotify'), ...])
+       access_token = models.CharField(max_length=1024)
+       refresh_token = models.CharField(max_length=1024, blank=True, null=True)
+       expires_at = models.DateTimeField()
+   ```
+
+2. **RecentTrack**:
+   ```python
+   class RecentTrack(models.Model):
+       user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='recent_tracks')
+       track_id = models.CharField(max_length=255)
+       title = models.CharField(max_length=255)
+       artist = models.CharField(max_length=255)
+       album = models.CharField(max_length=255, blank=True, null=True)
+       album_art = models.URLField(blank=True, null=True)
+       service = models.CharField(max_length=20, choices=MusicService.SERVICE_TYPES)
+       played_at = models.DateTimeField()
+   ```
+
+### Functionality
+1. **Track Search**: Search across Spotify's catalog by title, artist, or album
+2. **Recently Played**: Fetch and store user's recently played tracks
+3. **Playlist Access**: Browse and select tracks from user's playlists
+4. **Token Refresh**: Automatic refresh of expired access tokens
+5. **Error Handling**: Graceful handling of API errors and rate limits
+
+### Pin Integration
+When creating pins, users can select Spotify tracks with these fields:
+- `track_title`: Title of the track
+- `track_artist`: Artist name
+- `album`: Album name (optional)
+- `track_url`: Spotify URL to the track
+- `service`: Set to 'spotify'
+
+### Frontend Integration
+The frontend can access these endpoints to:
+1. Display a track selection interface when creating pins
+2. Show track details with album art when viewing pins
+3. Provide play buttons that open tracks in Spotify
+4. Display the user's playlists and recently played tracks
+
+### Documentation
+For detailed setup instructions and troubleshooting, see:
+- [README-spotify.md](README-spotify.md) - Comprehensive setup guide
+- API documentation at `/api/schema/swagger-ui/`
+
+---
+
+## 🎵 Flutter Frontend Spotify Integration
+
+### Overview
+This section outlines how to integrate Spotify into your BOPMaps Flutter frontend, leveraging the backend API endpoints.
+
+### Required Dependencies
+Add these to your `pubspec.yaml`:
+```yaml
+dependencies:
+  spotify_sdk: ^2.3.0        # Native Spotify SDK integration
+  flutter_web_auth: ^0.5.0   # OAuth flow in WebView
+  http: ^0.13.5              # HTTP requests
+  flutter_secure_storage: ^8.0.0  # Secure token storage
+```
+
+### Main Components
+
+#### 1. MusicTrack Model
+```dart
+class MusicTrack {
+  final String id;
+  final String title; 
+  final String artist;
+  final String album;
+  final String albumArt;
+  final String url;
+  final String service;
+  final String? previewUrl;
+  
+  MusicTrack({
+    required this.id,
+    required this.title,
+    required this.artist,
+    required this.album,
+    required this.albumArt,
+    required this.url,
+    required this.service,
+    this.previewUrl,
+  });
+  
+  factory MusicTrack.fromJson(Map<String, dynamic> json) {
+    return MusicTrack(
+      id: json['id'],
+      title: json['title'],
+      artist: json['artist'],
+      album: json['album'] ?? '',
+      albumArt: json['album_art'] ?? '',
+      url: json['url'],
+      service: json['service'],
+      previewUrl: json['preview_url'],
+    );
+  }
+  
+  // Helper to generate pin data
+  Map<String, dynamic> toPinData({
+    required String title,
+    required String description,
+    required double latitude,
+    required double longitude,
+  }) {
+    return {
+      'title': title,
+      'description': description,
+      'location': {
+        'type': 'Point',
+        'coordinates': [longitude, latitude]
+      },
+      'track_title': this.title,
+      'track_artist': this.artist, 
+      'album': this.album,
+      'track_url': this.url,
+      'service': this.service,
+    };
+  }
+}
+```
+
+#### 2. SpotifyService Class
+```dart
+class SpotifyService {
+  final ApiClient _apiClient;
+  
+  SpotifyService({required ApiClient apiClient}) : _apiClient = apiClient;
+  
+  /// Check if user has connected Spotify
+  Future<bool> isConnected() async {
+    try {
+      final response = await _apiClient.get('/api/music/api/services/');
+      final services = List<Map<String, dynamic>>.from(response.data);
+      return services.any((service) => service['service_type'] == 'spotify');
+    } catch (e) {
+      print('Error checking Spotify connection: $e');
+      return false;
+    }
+  }
+  
+  /// Connect Spotify using OAuth
+  Future<bool> connect() async {
+    try {
+      // Get auth URL from our backend
+      final response = await _apiClient.get('/api/music/auth/spotify/');
+      final authUrl = response.data['auth_url'];
+      
+      // Launch OAuth flow in WebView
+      final result = await FlutterWebAuth.authenticate(
+        url: authUrl,
+        callbackUrlScheme: 'bopmaps', // Must match registered callback URL
+      );
+      
+      // Extract the authorization code
+      final code = Uri.parse(result).queryParameters['code'];
+      if (code == null) {
+        throw Exception('Authorization code not found');
+      }
+      
+      // Send code to backend to exchange for tokens
+      await _apiClient.post(
+        '/api/music/auth/spotify/callback/',
+        data: {'code': code},
+      );
+      
+      return true;
+    } catch (e) {
+      print('Error connecting to Spotify: $e');
+      return false;
+    }
+  }
+  
+  /// Search for tracks
+  Future<List<MusicTrack>> searchTracks(String query) async {
+    try {
+      final response = await _apiClient.get(
+        '/api/music/api/tracks/search/',
+        queryParameters: {'q': query},
+      );
+      
+      final spotifyResults = response.data['spotify'] ?? [];
+      return List<MusicTrack>.from(
+        spotifyResults.map((track) => MusicTrack.fromJson(track))
+      );
+    } catch (e) {
+      print('Error searching tracks: $e');
+      return [];
+    }
+  }
+  
+  /// Get recently played tracks
+  Future<List<MusicTrack>> getRecentlyPlayed({int limit = 20}) async {
+    try {
+      final response = await _apiClient.get(
+        '/api/music/api/tracks/recently_played/',
+        queryParameters: {'limit': limit.toString()},
+      );
+      
+      final spotifyResults = response.data['spotify'] ?? [];
+      return List<MusicTrack>.from(
+        spotifyResults.map((track) => MusicTrack.fromJson(track))
+      );
+    } catch (e) {
+      print('Error getting recently played: $e');
+      return [];
+    }
+  }
+  
+  /// Get user's playlists
+  Future<List<Map<String, dynamic>>> getPlaylists() async {
+    try {
+      final response = await _apiClient.get('/api/music/api/spotify/playlists/');
+      
+      if (response.data['items'] != null) {
+        return List<Map<String, dynamic>>.from(response.data['items']);
+      }
+      return [];
+    } catch (e) {
+      print('Error getting playlists: $e');
+      return [];
+    }
+  }
+  
+  /// Get tracks from a playlist
+  Future<List<MusicTrack>> getPlaylistTracks(String playlistId) async {
+    try {
+      final response = await _apiClient.get(
+        '/api/music/api/spotify/playlist/$playlistId/tracks/'
+      );
+      
+      if (response.data['items'] != null) {
+        final trackItems = List<Map<String, dynamic>>.from(response.data['items']);
+        return trackItems.map((item) {
+          final track = item['track'];
+          return MusicTrack(
+            id: track['id'],
+            title: track['name'],
+            artist: track['artists'][0]['name'],
+            album: track['album']['name'],
+            albumArt: track['album']['images'][0]['url'],
+            url: track['external_urls']['spotify'],
+            service: 'spotify',
+          );
+        }).toList();
+      }
+      return [];
+    } catch (e) {
+      print('Error getting playlist tracks: $e');
+      return [];
+    }
+  }
+  
+  /// Play a track using Spotify app
+  Future<bool> playTrack(String trackUri) async {
+    try {
+      await SpotifySdk.connectToSpotifyRemote(
+        clientId: "YOUR_CLIENT_ID",
+        redirectUrl: "bopmaps://callback",
+      );
+      
+      await SpotifySdk.play(spotifyUri: trackUri);
+      return true;
+    } catch (e) {
+      print('Error playing track: $e');
+      return false;
+    }
+  }
+}
+```
+
+#### 3. MusicProvider (State Management)
+```dart
+class MusicProvider with ChangeNotifier {
+  final SpotifyService _spotifyService;
+  
+  bool _isSpotifyConnected = false;
+  List<MusicTrack> _searchResults = [];
+  List<MusicTrack> _recentTracks = [];
+  List<Map<String, dynamic>> _playlists = [];
+  MusicTrack? _selectedTrack;
+  bool _isLoading = false;
+  
+  MusicProvider({required SpotifyService spotifyService}) 
+    : _spotifyService = spotifyService {
+    _checkConnections();
+  }
+  
+  // Getters
+  bool get isSpotifyConnected => _isSpotifyConnected;
+  List<MusicTrack> get searchResults => _searchResults;
+  List<MusicTrack> get recentTracks => _recentTracks;
+  List<Map<String, dynamic>> get playlists => _playlists;
+  MusicTrack? get selectedTrack => _selectedTrack;
+  bool get isLoading => _isLoading;
+  
+  // Methods
+  Future<void> _checkConnections() async {
+    _isLoading = true;
+    notifyListeners();
+    
+    _isSpotifyConnected = await _spotifyService.isConnected();
+    
+    _isLoading = false;
+    notifyListeners();
+  }
+  
+  Future<bool> connectSpotify() async {
+    _isLoading = true;
+    notifyListeners();
+    
+    final result = await _spotifyService.connect();
+    if (result) {
+      _isSpotifyConnected = true;
+    }
+    
+    _isLoading = false;
+    notifyListeners();
+    return result;
+  }
+  
+  Future<void> searchTracks(String query) async {
+    if (query.trim().isEmpty) {
+      _searchResults = [];
+      notifyListeners();
+      return;
+    }
+    
+    _isLoading = true;
+    notifyListeners();
+    
+    _searchResults = await _spotifyService.searchTracks(query);
+    
+    _isLoading = false;
+    notifyListeners();
+  }
+  
+  void selectTrack(MusicTrack track) {
+    _selectedTrack = track;
+    notifyListeners();
+  }
+}
+```
+
+### Integration with Pin Creation
+Integrate track selection when creating pins:
+
+```dart
+class CreatePinScreen extends StatefulWidget {
+  @override
+  _CreatePinScreenState createState() => _CreatePinScreenState();
+}
+
+class _CreatePinScreenState extends State<CreatePinScreen> {
+  MusicTrack? _selectedTrack;
+  final TextEditingController _titleController = TextEditingController();
+  final TextEditingController _descriptionController = TextEditingController();
+  
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Drop a Music Pin')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Pin details form
+            TextField(
+              controller: _titleController,
+              decoration: InputDecoration(labelText: 'Pin Title'),
+            ),
+            TextField(
+              controller: _descriptionController,
+              decoration: InputDecoration(labelText: 'Description'),
+              maxLines: 2,
+            ),
+            
+            SizedBox(height: 16),
+            
+            // Track selection button
+            ElevatedButton(
+              onPressed: () => _selectTrack(context),
+              child: Text('Select Music Track'),
+            ),
+            
+            // Selected track preview
+            if (_selectedTrack != null) ...[
+              SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Row(
+                    children: [
+                      Image.network(
+                        _selectedTrack!.albumArt,
+                        width: 60,
+                        height: 60,
+                      ),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _selectedTrack!.title,
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            Text(_selectedTrack!.artist),
+                            Text(
+                              'via ${_selectedTrack!.service}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            
+            Spacer(),
+            
+            // Submit button
+            ElevatedButton(
+              onPressed: _selectedTrack == null ? null : _createPin,
+              child: Text('Drop Pin'),
+              style: ElevatedButton.styleFrom(
+                padding: EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  void _selectTrack(BuildContext context) async {
+    final MusicTrack? track = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => TrackSearchScreen(),
+      ),
+    );
+    
+    if (track != null) {
+      setState(() {
+        _selectedTrack = track;
+        // Optionally set title based on track
+        if (_titleController.text.isEmpty) {
+          _titleController.text = '${track.title} by ${track.artist}';
+        }
+      });
+    }
+  }
+  
+  void _createPin() {
+    // Get current location
+    final currentLocation = Provider.of<LocationProvider>(context, listen: false).currentLocation;
+    
+    if (currentLocation == null || _selectedTrack == null) return;
+    
+    // Create pin data
+    final pinData = _selectedTrack!.toPinData(
+      title: _titleController.text,
+      description: _descriptionController.text,
+      latitude: currentLocation.latitude,
+      longitude: currentLocation.longitude,
+    );
+    
+    // Save pin to backend
+    Provider.of<PinProvider>(context, listen: false)
+        .createPin(pinData)
+        .then((_) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Pin dropped successfully!')),
+      );
+      Navigator.pop(context);
+    }).catchError((error) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: ${error.toString()}')),
+      );
+    });
+  }
+}
+```
+
+### Track Search Screen
+Create a screen for searching and selecting music:
+
+```dart
+class TrackSearchScreen extends StatefulWidget {
+  @override
+  _TrackSearchScreenState createState() => _TrackSearchScreenState();
+}
+
+class _TrackSearchScreenState extends State<TrackSearchScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  final TextEditingController _searchController = TextEditingController();
+  
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+    
+    // Load initial data
+    Future.microtask(() {
+      final musicProvider = Provider.of<MusicProvider>(context, listen: false);
+      musicProvider.fetchRecentlyPlayed();
+      musicProvider.fetchPlaylists();
+    });
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Select Music'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: [
+            Tab(text: 'Search'),
+            Tab(text: 'Recent'),
+            Tab(text: 'Playlists'),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          // Search tab
+          Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    labelText: 'Search for music',
+                    prefixIcon: Icon(Icons.search),
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (value) {
+                    if (value.length > 2) {
+                      Provider.of<MusicProvider>(context, listen: false)
+                          .searchTracks(value);
+                    }
+                  },
+                ),
+              ),
+              Expanded(
+                child: Consumer<MusicProvider>(
+                  builder: (context, provider, child) {
+                    if (provider.isLoading) {
+                      return Center(child: CircularProgressIndicator());
+                    }
+                    
+                    return ListView.builder(
+                      itemCount: provider.searchResults.length,
+                      itemBuilder: (context, index) {
+                        final track = provider.searchResults[index];
+                        return ListTile(
+                          leading: Image.network(track.albumArt),
+                          title: Text(track.title),
+                          subtitle: Text(track.artist),
+                          onTap: () {
+                            Navigator.pop(context, track);
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+          
+          // Recent tab
+          Consumer<MusicProvider>(
+            builder: (context, provider, child) {
+              if (!provider.isSpotifyConnected) {
+                return Center(
+                  child: ElevatedButton(
+                    onPressed: () => provider.connectSpotify(),
+                    child: Text('Connect to Spotify'),
+                  ),
+                );
+              }
+              
+              if (provider.isLoading) {
+                return Center(child: CircularProgressIndicator());
+              }
+              
+              return ListView.builder(
+                itemCount: provider.recentTracks.length,
+                itemBuilder: (context, index) {
+                  final track = provider.recentTracks[index];
+                  return ListTile(
+                    leading: Image.network(track.albumArt),
+                    title: Text(track.title),
+                    subtitle: Text(track.artist),
+                    onTap: () {
+                      Navigator.pop(context, track);
+                    },
+                  );
+                },
+              );
+            },
+          ),
+          
+          // Playlists tab (similar implementation)
+          Center(child: Text('Playlists')),
+        ],
+      ),
+    );
+  }
+}
+```
+
+### Setup in main.dart
+Properly initialize services and providers:
+
+```dart
+void main() {
+  runApp(
+    MultiProvider(
+      providers: [
+        Provider<ApiClient>(
+          create: (_) => ApiClient(),
+        ),
+        Provider<SpotifyService>(
+          create: (context) => SpotifyService(
+            apiClient: context.read<ApiClient>(),
+          ),
+        ),
+        ChangeNotifierProvider<MusicProvider>(
+          create: (context) => MusicProvider(
+            spotifyService: context.read<SpotifyService>(),
+          ),
+        ),
+        // Other providers...
+      ],
+      child: MyApp(),
+    ),
+  );
+}
+```
+
+### Handling Deep Links
+Configure your app to handle Spotify OAuth callbacks:
+
+1. **In Android (android/app/src/main/AndroidManifest.xml)**:
+```xml
+<intent-filter>
+  <action android:name="android.intent.action.VIEW" />
+  <category android:name="android.intent.category.DEFAULT" />
+  <category android:name="android.intent.category.BROWSABLE" />
+  <data android:scheme="bopmaps" android:host="callback" />
+</intent-filter>
+```
+
+2. **In iOS (ios/Runner/Info.plist)**:
+```xml
+<key>CFBundleURLTypes</key>
+<array>
+  <dict>
+    <key>CFBundleTypeRole</key>
+    <string>Editor</string>
+    <key>CFBundleURLName</key>
+    <string>com.yourdomain.bopmaps</string>
+    <key>CFBundleURLSchemes</key>
+    <array>
+      <string>bopmaps</string>
+    </array>
+  </dict>
+</array>
+```
+
+By following this implementation, you'll have a complete Spotify integration in your Flutter frontend that communicates seamlessly with your Django backend.
 
 ---
 
@@ -361,6 +1080,68 @@ GET    /api/geo/trending/             # Get trending areas with many pins
 GET    /api/geo/heatmap/              # Get pin density data for heatmap display
 ```
 
+### Web Pages
+```
+GET    /music/connect/                # GET - Page for connecting music services
+GET    /music/auth/spotify/           # GET - Start Spotify OAuth flow
+GET    /music/auth/spotify/callback/  # GET - Spotify OAuth callback
+GET    /music/auth/success/           # GET - Successful connection page
+```
+
+### Music Service Management
+```
+GET    /music/api/services/connected_services/        # GET - Get connected services
+DELETE /music/api/services/disconnect/{service_type}/   # DELETE - Disconnect service
+```
+
+### Spotify-specific APIs
+```
+GET    /music/api/spotify/playlists/                  # GET - Get user playlists
+GET    /music/api/spotify/playlist/{id}/              # GET - Get playlist details
+GET    /music/api/spotify/playlist/{id}/tracks/       # GET - Get playlist tracks
+GET    /music/api/spotify/track/{id}/                 # GET - Get track details
+GET    /music/api/spotify/recently_played/            # GET - Get recently played
+GET    /music/api/spotify/search/                     # GET - Search Spotify tracks
+```
+
+### Generic Track APIs (work across multiple services)
+```
+GET    /music/api/tracks/search/                      # GET - Search across all services
+GET    /music/api/tracks/recently_played/             # GET - Get recently played from all
+GET    /music/api/tracks/playlists/                   # GET - Get playlists from all
+GET    /music/api/tracks/playlist/{service}/{id}/     # GET - Get tracks from a playlist
+GET    /music/api/tracks/track/{service}/{id}/        # GET - Get track details
+```
+
+### Friends
+```
+GET    /friends/
+POST   /friends/requests/
+```
+
+### Geo
+```
+GET    /geo/trending/                 // GET - Get trending areas
+GET    /geo/trending/map_visualization/ // GET - Get data for heatmap visualization
+GET    /geo/locations/                // GET - User location data
+
+// WebSocket for real-time location
+WS_BASE_URL + "/ws/location/"                   // WebSocket for location updates
+```
+
+### Gamification
+```
+GET    /gamification/achievements/    // GET - List achievements
+GET    /gamification/badges/          // GET - List badges
+```
+
+### API Documentation
+```
+GET    /schema/                       // GET - OpenAPI schema
+GET    /schema/swagger-ui/            // GET - Swagger UI
+GET    /schema/redoc/                 // GET - ReDoc UI
+```
+
 ---
 
 ## 📍 Geolocation and Aura Logic
@@ -600,3 +1381,6 @@ BOPMapsBackend/
 ## License
 
 [MIT License](LICENSE) 
+
+BASE_URL = "http://your-server-address:8000"  // Replace with your actual server address
+API_BASE_URL = BASE_URL + "/api" 

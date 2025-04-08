@@ -387,6 +387,7 @@ SPECTACULAR_SETTINGS = {
 # Spotify API
 SPOTIFY_CLIENT_ID = config('SPOTIFY_CLIENT_ID', default='')
 SPOTIFY_CLIENT_SECRET = config('SPOTIFY_CLIENT_SECRET', default='')
+SPOTIFY_REDIRECT_URI = 'http://localhost:8888/callback'
 
 # Apple Music API
 APPLE_MUSIC_KEY_ID = config('APPLE_MUSIC_KEY_ID', default='')

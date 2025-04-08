@@ -7,7 +7,8 @@ from .views import (
     connect_services,
     MusicServiceViewSet,
     SpotifyViewSet,
-    MusicTrackViewSet
+    MusicTrackViewSet,
+    callback_handler
 )
 
 router = DefaultRouter()
@@ -24,6 +25,9 @@ urlpatterns = [
     path('auth/spotify/', spotify_auth, name='spotify-auth'),
     path('auth/spotify/callback/', spotify_callback, name='spotify-callback'),
     path('auth/success/', connection_success, name='connection-success'),
+    
+    # Mobile app callback handler
+    path('auth/callback/', callback_handler, name='callback-handler'),
     
     # API endpoints
     path('api/', include(router.urls)),

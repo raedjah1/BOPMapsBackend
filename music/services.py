@@ -16,6 +16,13 @@ class MusicServiceAuthMixin:
     @staticmethod
     def get_redirect_uri(request, service):
         """Get the redirect URI for OAuth flow"""
+        # Check if a fixed redirect URI is defined in settings for this service
+        setting_name = f'{service.upper()}_REDIRECT_URI'
+        fixed_uri = getattr(settings, setting_name, None)
+        if fixed_uri:
+            return fixed_uri
+        
+        # Fall back to dynamically generated URI based on the request
         return request.build_absolute_uri(reverse(f'music:{service}-callback'))
     
     @staticmethod
