@@ -8,7 +8,8 @@ from .views import (
     MusicServiceViewSet,
     SpotifyViewSet,
     MusicTrackViewSet,
-    callback_handler
+    callback_handler,
+    spotify_mobile_auth
 )
 
 router = DefaultRouter()
@@ -23,6 +24,7 @@ urlpatterns = [
     
     # OAuth flow endpoints
     path('auth/spotify/', spotify_auth, name='spotify-auth'),
+    path('auth/spotify/mobile/', spotify_mobile_auth, name='spotify-mobile-auth'),
     path('auth/spotify/callback/', spotify_callback, name='spotify-callback'),
     path('auth/success/', connection_success, name='connection-success'),
     

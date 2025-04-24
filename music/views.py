@@ -45,6 +45,20 @@ def spotify_auth(request):
     return redirect(auth_url)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def spotify_mobile_auth(request):
+    """Start Spotify OAuth flow for mobile apps"""
+    # Create a mock request to pass to get_auth_url with mobile redirect URI
+    class MockRequest:
+        def __init__(self):
+            self.build_absolute_uri = lambda x: settings.SPOTIFY_MOBILE_REDIRECT_URI
+    
+    mock_request = MockRequest()
+    auth_url = SpotifyService.get_auth_url(mock_request)
+    return Response({'auth_url': auth_url})
+
+
 def spotify_callback(request):
     """
     Handle Spotify OAuth callback
@@ -181,7 +195,7 @@ def callback_handler(request):
         # Create a mock request to pass to exchange_code_for_tokens
         class MockRequest:
             def __init__(self):
-                self.build_absolute_uri = lambda x: settings.SPOTIFY_REDIRECT_URI
+                self.build_absolute_uri = lambda x: settings.SPOTIFY_MOBILE_REDIRECT_URI
         
         mock_request = MockRequest()
         
