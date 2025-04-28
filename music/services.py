@@ -193,4 +193,12 @@ class SpotifyService:
         return SpotifyService.make_api_request(
             music_service, 
             f"search?q={encoded_query}&type=track&limit={limit}"
+        )
+        
+    @staticmethod
+    def get_saved_tracks(music_service, limit=50, offset=0):
+        """Get user's saved/liked tracks"""
+        return SpotifyService.make_api_request(
+            music_service, 
+            f"me/tracks?limit={limit}&offset={offset}"
         ) 

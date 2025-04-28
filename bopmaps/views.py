@@ -6,8 +6,13 @@ from .permissions import IsOwnerOrReadOnly, IsOwner
 from django.utils import timezone
 from django.db import transaction
 import logging
+from django.views.generic import TemplateView
 
 logger = logging.getLogger('bopmaps')
+
+class IndexView(TemplateView):
+    """Landing page for BOPMaps demo"""
+    template_name = 'index.html'
 
 class BaseModelViewSet(viewsets.ModelViewSet):
     """
@@ -62,6 +67,14 @@ class BaseModelViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error deleting {instance.__class__.__name__}: {str(e)}")
             raise
+
+    def get_serializer_context(self):
+        """
+        Add request to serializer context
+        """
+        context = super().get_serializer_context()
+        # Additional context can be added here
+        return context
 
 
 class BaseReadOnlyViewSet(viewsets.ReadOnlyModelViewSet):

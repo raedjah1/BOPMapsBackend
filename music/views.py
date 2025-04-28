@@ -27,7 +27,8 @@ from .utils import (
     get_recently_played_tracks, 
     get_user_playlists, 
     get_playlist_tracks,
-    get_track_details
+    get_track_details,
+    get_saved_tracks
 )
 
 User = get_user_model()
@@ -481,6 +482,22 @@ class SpotifyViewSet(viewsets.ViewSet):
         
         return Response(result)
 
+    @action(detail=False, methods=['GET'])
+    def saved_tracks(self, request):
+        """Get user's saved/liked tracks on Spotify"""
+        spotify_service = self._get_spotify_service()
+        if not spotify_service:
+            return Response({"error": "Spotify not connected"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        limit = request.query_params.get('limit', 50)
+        offset = request.query_params.get('offset', 0)
+        
+        result = SpotifyService.get_saved_tracks(spotify_service, limit, offset)
+        if 'error' in result:
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+            
+        return Response(result)
+
 
 class MusicTrackViewSet(viewsets.ViewSet):
     """
@@ -512,6 +529,16 @@ class MusicTrackViewSet(viewsets.ViewSet):
         limit = int(request.query_params.get('limit', 10))
         
         results = get_recently_played_tracks(request.user, service, limit)
+        return Response(results)
+    
+    @action(detail=False, methods=['GET'])
+    def saved_tracks(self, request):
+        """Get user's saved/liked tracks"""
+        service = request.query_params.get('service', None)
+        limit = int(request.query_params.get('limit', 50))
+        offset = int(request.query_params.get('offset', 0))
+        
+        results = get_saved_tracks(request.user, service, limit, offset)
         return Response(results)
     
     @action(detail=False, methods=['GET'])

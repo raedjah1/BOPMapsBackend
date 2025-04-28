@@ -12,6 +12,7 @@ from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.auth import AuthMiddlewareStack
 from django.core.asgi import get_asgi_application
 import geo.routing
+import pins.routing
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "bopmaps.settings")
 
@@ -19,7 +20,8 @@ application = ProtocolTypeRouter({
     "http": get_asgi_application(),
     "websocket": AuthMiddlewareStack(
         URLRouter(
-            geo.routing.websocket_urlpatterns
+            geo.routing.websocket_urlpatterns +
+            pins.routing.websocket_urlpatterns
         )
     ),
 })

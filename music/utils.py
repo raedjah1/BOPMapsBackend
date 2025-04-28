@@ -213,4 +213,47 @@ def get_track_details(user, track_id, service_type):
     
     # Apple Music and SoundCloud would be implemented similarly when added
     
-    return None 
+    return None
+
+def get_saved_tracks(user, service_type=None, limit=50, offset=0):
+    """
+    Get saved/liked tracks from user's connected music services
+    
+    Args:
+        user: User object
+        service_type: Optional service type to limit results to
+        limit: Maximum results per service
+        offset: Number of results to skip
+        
+    Returns:
+        dict of service_type -> list of track results
+    """
+    results = {}
+    services = get_user_music_services(user)
+    
+    if service_type and service_type in services:
+        # Only fetch from the specified service
+        services = {service_type: services[service_type]}
+    
+    # Get Spotify saved tracks
+    if 'spotify' in services:
+        spotify_results = SpotifyService.get_saved_tracks(services['spotify'], limit, offset)
+        if 'error' not in spotify_results and 'items' in spotify_results:
+            # Format the results
+            results['spotify'] = [
+                {
+                    'id': item['track']['id'],
+                    'title': item['track']['name'],
+                    'artist': item['track']['artists'][0]['name'],
+                    'album': item['track']['album']['name'],
+                    'album_art': item['track']['album']['images'][0]['url'] if item['track']['album']['images'] else None,
+                    'url': item['track']['external_urls']['spotify'],
+                    'added_at': item['added_at'],
+                    'service': 'spotify'
+                }
+                for item in spotify_results['items']
+            ]
+    
+    # Apple Music and SoundCloud would be implemented similarly when added
+    
+    return results 

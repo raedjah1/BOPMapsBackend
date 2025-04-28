@@ -3,22 +3,35 @@ from django.db import transaction
 from django.contrib.gis.geos import Point
 from django.utils import timezone
 from django.db import models
+from django.core.cache import cache
 from rest_framework import status, viewsets, mixins
 from rest_framework.response import Response
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from datetime import timedelta
 
-from .models import Pin, PinInteraction
-from .serializers import PinSerializer, PinGeoSerializer, PinInteractionSerializer
-from .utils import get_nearby_pins, record_pin_interaction, get_trending_pins, check_pin_visibility, get_clustered_pins
+from .models import Pin, PinInteraction, PinAnalytics
+from .serializers import PinSerializer, PinGeoSerializer, PinInteractionSerializer, PinAnalyticsSerializer
+from .utils import (
+    get_nearby_pins, record_pin_interaction, get_trending_pins, 
+    check_pin_visibility, get_clustered_pins, get_pins_by_relevance
+)
 
 from bopmaps.views import BaseModelViewSet
 from bopmaps.permissions import IsOwnerOrReadOnly
 from bopmaps.utils import create_error_response
 import logging
 
+try:
+    # Try to import channels layer for WebSocket support
+    from channels.layers import get_channel_layer
+    from asgiref.sync import async_to_sync
+    CHANNELS_AVAILABLE = True
+except ImportError:
+    CHANNELS_AVAILABLE = False
+    
 logger = logging.getLogger('bopmaps')
+
 
 class PinViewSet(BaseModelViewSet):
     """
@@ -31,6 +44,8 @@ class PinViewSet(BaseModelViewSet):
     def get_serializer_class(self):
         if self.action == 'list_map' or self.action == 'nearby':
             return PinGeoSerializer
+        elif self.action == 'analytics':
+            return PinAnalyticsSerializer
         return PinSerializer
     
     def get_queryset(self):
@@ -43,13 +58,51 @@ class PinViewSet(BaseModelViewSet):
         )
         
         # Filter private pins (only show user's own private pins)
-        if self.action in ['list', 'list_map', 'nearby']:
+        if self.action in ['list', 'list_map', 'nearby', 'recommended', 'advanced_search']:
             queryset = queryset.filter(
                 models.Q(is_private=False) | 
                 models.Q(owner=self.request.user)
             )
         
         return queryset
+
+    def create(self, request, *args, **kwargs):
+        """Enhanced pin creation with notifications"""
+        response = super().create(request, *args, **kwargs)
+        
+        # If successfully created, trigger notifications via WebSockets
+        if response.status_code == 201 and CHANNELS_AVAILABLE:
+            try:
+                # Get the newly created pin
+                pin = Pin.objects.get(id=response.data['id'])
+                
+                # Create notification message
+                message = {
+                    'type': 'new_pin',
+                    'pin_id': pin.id,
+                    'owner': pin.owner.username,
+                    'title': pin.title,
+                    'location': {
+                        'lat': pin.location.y,
+                        'lng': pin.location.x
+                    }
+                }
+                
+                # Send to the pin update channel
+                channel_layer = get_channel_layer()
+                async_to_sync(channel_layer.group_send)(
+                    'pins_updates',
+                    {
+                        'type': 'broadcast_update',
+                        'message': message
+                    }
+                )
+                
+                logger.info(f"Sent notification for new pin {pin.id}")
+            except Exception as e:
+                logger.error(f"Failed to send pin notification: {str(e)}")
+        
+        return response
     
     @action(detail=False, methods=['get'])
     def list_map(self, request):
@@ -185,6 +238,197 @@ class PinViewSet(BaseModelViewSet):
             logger.error(f"Error in trending pins: {str(e)}")
             return create_error_response(str(e), status.HTTP_500_INTERNAL_SERVER_ERROR)
     
+    @action(detail=False, methods=['get'])
+    def recommended(self, request):
+        """
+        Get recommended pins based on user preferences and location
+        """
+        try:
+            lat = request.query_params.get('latitude')
+            lng = request.query_params.get('longitude')
+            limit = request.query_params.get('limit', 20)
+            
+            try:
+                limit = int(limit)
+                if limit > 50:
+                    limit = 50
+            except (ValueError, TypeError):
+                limit = 20
+                
+            if lat and lng:
+                try:
+                    lat = float(lat)
+                    lng = float(lng)
+                except (ValueError, TypeError):
+                    return create_error_response("Invalid coordinates", status.HTTP_400_BAD_REQUEST)
+            else:
+                # Recommendations without location are less precise
+                lat = None
+                lng = None
+                
+            pins = get_pins_by_relevance(
+                user=request.user,
+                lat=lat,
+                lng=lng,
+                limit=limit
+            )
+            
+            serializer = PinSerializer(pins, many=True)
+            return Response(serializer.data)
+            
+        except Exception as e:
+            logger.error(f"Error in recommended pins: {str(e)}")
+            return create_error_response(str(e), status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=False, methods=['get'])
+    def advanced_search(self, request):
+        """
+        Advanced pin search with multiple criteria
+        """
+        try:
+            queryset = self.get_queryset()
+            
+            # Music service filter
+            service = request.query_params.get('service')
+            if service:
+                queryset = queryset.filter(service=service)
+                
+            # Genre/mood filters
+            genre = request.query_params.get('genre')
+            mood = request.query_params.get('mood')
+            if genre:
+                queryset = queryset.filter(genre=genre)
+            if mood:
+                queryset = queryset.filter(mood=mood)
+                
+            # Artist filter
+            artist = request.query_params.get('artist')
+            if artist:
+                queryset = queryset.filter(track_artist__icontains=artist)
+                
+            # Track title filter
+            track = request.query_params.get('track')
+            if track:
+                queryset = queryset.filter(track_title__icontains=track)
+                
+            # Rarity filter
+            rarity = request.query_params.get('rarity')
+            if rarity:
+                queryset = queryset.filter(rarity=rarity)
+                
+            # Time-based filters
+            time_range = request.query_params.get('time_range')
+            if time_range:
+                if time_range == 'today':
+                    queryset = queryset.filter(created_at__date=timezone.now().date())
+                elif time_range == 'week':
+                    queryset = queryset.filter(created_at__gte=timezone.now() - timedelta(days=7))
+                elif time_range == 'month':
+                    queryset = queryset.filter(created_at__gte=timezone.now() - timedelta(days=30))
+                    
+            # Popularity filters
+            min_likes = request.query_params.get('min_likes')
+            if min_likes:
+                try:
+                    min_likes = int(min_likes)
+                    queryset = queryset.annotate(
+                        like_count=models.Count('interactions', filter=models.Q(interactions__interaction_type='like'))
+                    ).filter(like_count__gte=min_likes)
+                except (ValueError, TypeError):
+                    pass
+                    
+            # Sort options
+            sort_by = request.query_params.get('sort_by', 'created_at')
+            if sort_by == 'likes':
+                queryset = queryset.annotate(
+                    like_count=models.Count('interactions', filter=models.Q(interactions__interaction_type='like'))
+                ).order_by('-like_count')
+            elif sort_by == 'collects':
+                queryset = queryset.annotate(
+                    collect_count=models.Count('interactions', filter=models.Q(interactions__interaction_type='collect'))
+                ).order_by('-collect_count')
+            elif sort_by == 'views':
+                queryset = queryset.annotate(
+                    view_count=models.Count('interactions', filter=models.Q(interactions__interaction_type='view'))
+                ).order_by('-view_count')
+            else:
+                # Default to newest first
+                queryset = queryset.order_by('-created_at')
+                
+            # Pagination
+            limit = request.query_params.get('limit', 20)
+            offset = request.query_params.get('offset', 0)
+            try:
+                limit = int(limit)
+                offset = int(offset)
+                if limit > 50:
+                    limit = 50
+            except (ValueError, TypeError):
+                limit = 20
+                offset = 0
+                
+            queryset = queryset[offset:offset+limit]
+            serializer = PinSerializer(queryset, many=True)
+            
+            return Response({
+                'count': queryset.count(),
+                'next': offset + limit if queryset.count() == limit else None,
+                'previous': offset - limit if offset > 0 else None,
+                'results': serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"Error in advanced search: {str(e)}")
+            return create_error_response(str(e), status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['get'])
+    def similar(self, request, pk=None):
+        """
+        Find pins similar to this one
+        """
+        try:
+            pin = self.get_object()
+            
+            # Check visibility
+            if not check_pin_visibility(pin, request.user):
+                return create_error_response("Pin is not available", status.HTTP_404_NOT_FOUND)
+                
+            # Get similar pins
+            similar_pins = pin.find_similar_pins(limit=10)
+            serializer = PinSerializer(similar_pins, many=True)
+            
+            return Response(serializer.data)
+            
+        except Exception as e:
+            logger.error(f"Error finding similar pins: {str(e)}")
+            return create_error_response(str(e), status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['get'])
+    def analytics(self, request, pk=None):
+        """
+        Get analytics for a specific pin
+        """
+        try:
+            pin = self.get_object()
+            
+            # Only pin owner can view analytics
+            if pin.owner != request.user:
+                return create_error_response("Not authorized to view analytics", status.HTTP_403_FORBIDDEN)
+                
+            # Get or create analytics
+            analytics, created = PinAnalytics.objects.get_or_create(pin=pin)
+            
+            # Update analytics if needed
+            if created or (timezone.now() - analytics.last_updated).total_seconds() > 3600:
+                analytics = PinAnalytics.update_for_pin(pin)
+                
+            serializer = PinAnalyticsSerializer(analytics)
+            return Response(serializer.data)
+            
+        except Exception as e:
+            logger.error(f"Error getting pin analytics: {str(e)}")
+            return create_error_response(str(e), status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
     @action(detail=True, methods=['post'])
     def view(self, request, pk=None):
         """
@@ -262,13 +506,67 @@ class PinViewSet(BaseModelViewSet):
                 'aura_color': service_colors.get(pin.service, '#3388ff'),
                 'aura_opacity': rarity_opacity.get(pin.rarity, 0.7),
                 'pulse_animation': pin.created_at > (timezone.now() - timedelta(hours=24)),
-                'icon_url': pin.skin.image_url if hasattr(pin, 'skin') and pin.skin and hasattr(pin.skin, 'image_url') else None
+                'icon_url': pin.skin.image.url if hasattr(pin, 'skin') and pin.skin and pin.skin.image else None
             }
             
             return Response(data)
             
         except Exception as e:
             logger.error(f"Error getting pin map details: {str(e)}")
+            return create_error_response(str(e), status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=False, methods=['get'])
+    def websocket_connect(self, request):
+        """
+        Return connection info for real-time pin updates via WebSockets
+        """
+        if not CHANNELS_AVAILABLE:
+            return create_error_response("WebSocket support not available", status.HTTP_501_NOT_IMPLEMENTED)
+            
+        return Response({
+            'websocket_url': 'ws://localhost:8000/ws/pins/',
+            'supported_events': ['new_pin', 'trending_update']
+        })
+    
+    @action(detail=False, methods=['post'])
+    def batch_interact(self, request):
+        """
+        Batch process multiple pin interactions
+        """
+        try:
+            interactions = request.data.get('interactions', [])
+            results = []
+            
+            with transaction.atomic():
+                for interaction in interactions:
+                    pin_id = interaction.get('pin_id')
+                    interaction_type = interaction.get('type')
+                    
+                    try:
+                        pin = Pin.objects.get(id=pin_id)
+                        if check_pin_visibility(pin, request.user):
+                            record_pin_interaction(request.user, pin, interaction_type)
+                            results.append({
+                                'pin_id': pin_id,
+                                'status': 'success'
+                            })
+                        else:
+                            results.append({
+                                'pin_id': pin_id,
+                                'status': 'error',
+                                'message': 'Pin not available'
+                            })
+                    except Exception as e:
+                        results.append({
+                            'pin_id': pin_id,
+                            'status': 'error',
+                            'message': str(e)
+                        })
+                        
+            return Response(results)
+            
+        except Exception as e:
+            logger.error(f"Error in batch interactions: {str(e)}")
             return create_error_response(str(e), status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     def _record_interaction(self, request, pk, interaction_type):
