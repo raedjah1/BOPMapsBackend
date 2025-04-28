@@ -1,7 +1,9 @@
 # 🎵 BOPMaps Backend Documentation
 
 **Version:** 1.0  
-**Lead Devs:** Jah, Mason, Eric, Isaiah, Danny  
+**Lead Dev:** Jah, 
+**CO Dev:** Mason, Eric 
+
 **Stack:** Django REST Framework (Backend) • Flutter(Frontend) • Spotify/Apple/Soundcloud APIs • Geolocation & Leaflet.js Maps
 
 ---
