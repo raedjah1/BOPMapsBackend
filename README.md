@@ -1,7 +1,7 @@
 # 🎵 BOPMaps Backend Documentation
 
 **Version:** 1.0  
-**Lead Dev:** Jah, 
+**Lead Dev:** Jah
 **Co Dev:** Mason, Eric
 
 
