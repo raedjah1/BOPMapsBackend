@@ -4,7 +4,7 @@
 ## Lead Dev: Jah
 
 
-## co Devs:** Mason, Eric
+## CO- Devs: Mason, Eric
 
 
 **Stack:** Django REST Framework (Backend) • Flutter(Frontend) • Spotify/Apple/Soundcloud APIs • Geolocation & Leaflet.js Maps
