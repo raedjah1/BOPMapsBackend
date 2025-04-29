@@ -2,7 +2,7 @@
 
 **Version:** 1.0  
 ## Lead Devs: Jah
-## Mothuso
+## CO Dev: Mothuso
   
 
 
