@@ -74,6 +74,8 @@ MIDDLEWARE = [
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    'geo.middleware.MapTileOptimizationMiddleware',
+    'geo.middleware.VectorDataOptimizationMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -295,13 +297,64 @@ LEAFLET_CONFIG = {
 # Cache configuration
 CACHES = {
     'default': {
-        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-        'LOCATION': 'unique-snowflake',
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': config('REDIS_URL', default='redis://localhost:6379/1'),
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            # Use the faster hiredis parser if available
+            'PARSER_CLASS': 'redis.connection.HiredisParser',
+            # Add connection pool options
+            'CONNECTION_POOL_KWARGS': {
+                'max_connections': 50,
+                'timeout': 20,
+            },
+            # Compressed data to save memory
+            'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',
+            # Cache keys prefix to avoid collisions
+            'KEY_PREFIX': 'bopmaps',
+            # Pickle version to use
+            'PICKLE_VERSION': -1,
+        },
+        # Cache timeout in seconds: 7 days default
+        'TIMEOUT': 60 * 60 * 24 * 7,
+    },
+    # Separate cache for tiles with longer expiration
+    'tiles': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': config('REDIS_URL', default='redis://localhost:6379/2'),
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'PARSER_CLASS': 'redis.connection.HiredisParser',
+            'KEY_PREFIX': 'tiles',
+        },
+        # Cache timeout for tiles: 30 days
+        'TIMEOUT': 60 * 60 * 24 * 30,
+    },
+    # Faster cache for session data
+    'sessions': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': config('REDIS_URL', default='redis://localhost:6379/3'),
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'KEY_PREFIX': 'session',
+        },
+        'TIMEOUT': 60 * 60 * 24,  # 1 day
     }
 }
 
-# Session settings - using database sessions instead of cache
-SESSION_ENGINE = 'django.contrib.sessions.backends.db'
+# Use the sessions cache for session storage
+SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+SESSION_CACHE_ALIAS = 'sessions'
+
+# Cache Settings for static files using CDN
+if not DEBUG:
+    AWS_S3_OBJECT_PARAMETERS = {
+        'CacheControl': 'max-age=86400',  # 1 day in seconds
+    }
+
+# Cache Settings
+CACHE_MIDDLEWARE_SECONDS = 60 * 15  # 15 minutes
+CACHE_MIDDLEWARE_KEY_PREFIX = 'bopmaps_middleware'
 
 # Custom User Model
 AUTH_USER_MODEL = 'users.User'
@@ -434,3 +487,43 @@ if DEBUG:
     DEBUG_TOOLBAR_CONFIG = {
         'SHOW_TOOLBAR_CALLBACK': lambda request: DEBUG,
     }
+
+# Cache cleanup settings
+TILE_CACHE_DAYS = 30  # How long to keep tiles
+REGION_CACHE_DAYS = 60  # How long to keep region bundles
+MAX_CACHE_SIZE_BYTES = 10 * 1024 * 1024 * 1024  # 10GB max cache size
+
+# Celery Beat schedule for cleanup tasks
+CELERY_BEAT_SCHEDULE = {
+    'cleanup-expired-data': {
+        'task': 'geo.tasks.cleanup_expired_data',
+        'schedule': timedelta(days=1),  # Run daily
+    },
+    'monitor-storage': {
+        'task': 'geo.tasks.monitor_storage_usage',
+        'schedule': timedelta(hours=1),  # Run hourly
+    },
+}
+
+# Redis cache settings with size limits
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': 'redis://127.0.0.1:6379/1',
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'MAX_MEMORY': '8gb',  # Maximum memory for Redis
+            'MAX_MEMORY_POLICY': 'allkeys-lru',  # Least Recently Used eviction
+        }
+    },
+    'tiles': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': 'redis://127.0.0.1:6379/2',
+        'TIMEOUT': 60 * 60 * 24 * 30,  # 30 days
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'MAX_MEMORY': '4gb',
+            'MAX_MEMORY_POLICY': 'allkeys-lru',
+        }
+    },
+}

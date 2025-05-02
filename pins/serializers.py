@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from rest_framework_gis.serializers import GeoFeatureModelSerializer
-from .models import Pin, PinInteraction, PinAnalytics
+from .models import Pin, PinInteraction
 from users.serializers import UserSerializer
 from gamification.serializers import PinSkinSerializer
 from bopmaps.serializers import BaseSerializer, TimeStampedModelSerializer
@@ -27,15 +27,12 @@ class PinSerializer(TimeStampedModelSerializer):
             'track_title', 'track_artist', 'album', 'track_url',
             'service', 'skin', 'skin_details', 'rarity', 'aura_radius',
             'is_private', 'expiration_date', 'created_at', 'updated_at',
-            'interaction_count', 'distance', 'has_expired', 'genre', 'mood', 'tags'
+            'interaction_count', 'distance', 'has_expired'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'owner', 'skin_details', 'distance', 'has_expired']
         extra_kwargs = {
             'track_url': {'validators': [MusicURLValidator()]},
             'expiration_date': {'required': False, 'allow_null': True},
-            'genre': {'required': False, 'allow_null': True},
-            'mood': {'required': False, 'allow_null': True},
-            'tags': {'required': False, 'allow_null': True},
         }
     
     def get_interaction_count(self, obj):
@@ -117,7 +114,7 @@ class PinGeoSerializer(GeoFeatureModelSerializer):
             'id', 'owner_name', 'title', 'track_title', 
             'track_artist', 'service', 'rarity', 'like_count',
             'collect_count', 'created_at', 'distance', 'has_expired',
-            'aura_radius', 'genre', 'mood', 'tags'
+            'aura_radius'
         ]
     
     def get_like_count(self, obj):
@@ -161,60 +158,4 @@ class PinInteractionSerializer(BaseSerializer):
             return instance
         except Exception as e:
             logger.error(f"Error creating pin interaction: {str(e)}")
-            raise
-
-
-class PinAnalyticsSerializer(BaseSerializer):
-    """
-    Serializer for PinAnalytics model
-    """
-    pin_title = serializers.CharField(source='pin.title', read_only=True)
-    engagement_rate = serializers.SerializerMethodField()
-    peak_hour_formatted = serializers.SerializerMethodField()
-    hourly_distribution = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = PinAnalytics
-        fields = [
-            'id', 'pin', 'pin_title', 'total_views', 'unique_viewers',
-            'collection_rate', 'peak_hour', 'peak_hour_formatted',
-            'engagement_rate', 'hourly_distribution', 'last_updated'
-        ]
-        read_only_fields = ['id', 'pin', 'last_updated']
-    
-    def get_engagement_rate(self, obj):
-        """Calculate engagement rate as (collection_rate * 100)%"""
-        return round(obj.collection_rate * 100, 1)
-    
-    def get_peak_hour_formatted(self, obj):
-        """Format peak hour in 12-hour format"""
-        hour = obj.peak_hour
-        if hour == 0:
-            return "12 AM"
-        elif hour < 12:
-            return f"{hour} AM"
-        elif hour == 12:
-            return "12 PM"
-        else:
-            return f"{hour - 12} PM"
-    
-    def get_hourly_distribution(self, obj):
-        """Get hourly distribution of views in last 7 days"""
-        from django.db.models import Count
-        from django.db.models.functions import ExtractHour
-        
-        # Query hourly distribution of views
-        hourly_views = obj.pin.interactions.filter(
-            interaction_type='view'
-        ).annotate(
-            hour=ExtractHour('created_at')
-        ).values('hour').annotate(
-            count=Count('id')
-        ).order_by('hour')
-        
-        # Convert to dictionary for easier frontend use
-        distribution = {hour: 0 for hour in range(24)}
-        for entry in hourly_views:
-            distribution[entry['hour']] = entry['count']
-            
-        return distribution 
+            raise 
