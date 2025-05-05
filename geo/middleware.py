@@ -7,10 +7,9 @@ import logging
 import re
 from django.utils.deprecation import MiddlewareMixin
 from django.conf import settings
-from django.core.cache import caches
+from django.core.cache import caches, cache
 from django.http import HttpResponse
 from cache_system import MapCache
-from django.core.cache import cache
 
 logger = logging.getLogger('bopmaps.cache')
 
@@ -38,41 +37,74 @@ class MapTileOptimizationMiddleware(MiddlewareMixin):
         
     def process_request(self, request):
         """
-        Process the request before it reaches the view
+        Process the request before the view (and other middleware) are called
         
         Args:
             request: The HTTP request
             
         Returns:
-            HttpResponse if we can serve from cache, otherwise None
+            HttpResponse if the request is handled or None to continue processing
         """
-        # Only process GET requests to tile URLs
-        if request.method != 'GET':
+        # Only handle GET requests to tile URLs
+        if not (hasattr(request, 'method') and request.method == 'GET'):
             return None
             
-        match = self.TILE_URL_PATTERN.match(request.path)
+        match = self.TILE_URL_PATTERN.match(request.path) if hasattr(request, 'path') else None
         if not match:
             return None
             
         # Extract tile coordinates
         z, x, y = map(int, match.groups())
         
-        # Check if we need to throttle
+        # Check if we should throttle this request
         client_ip = self._get_client_ip(request)
-        if self._should_throttle(client_ip):
-            logger.warning(f"Throttling tile requests from {client_ip}")
-            return HttpResponse("Rate limit exceeded", status=429)
-            
+        now = time.time()
+        
+        # Clean up old requests
+        self.request_counts = {ip: [t for t in times if t > now - 60] 
+                              for ip, times in self.request_counts.items()}
+        
+        # Check if rate limit exceeded
+        if (client_ip in self.request_counts and 
+            len(self.request_counts[client_ip]) >= self.MAX_REQUESTS_PER_MINUTE):
+            logger.warning('Rate limit exceeded for client %s', client_ip)
+            return HttpResponse('Rate limit exceeded', status=429,
+                              headers={'Retry-After': '60'})
+                              
+        # Add this request to the count
+        if client_ip not in self.request_counts:
+            self.request_counts[client_ip] = []
+        self.request_counts[client_ip].append(now)
+        
         # Try to get from cache
         cached_tile = MapCache.get_tile(z, x, y)
-        if cached_tile:
-            # Serve from cache with appropriate headers
-            response = HttpResponse(cached_tile, content_type="image/png")
-            self._add_cache_headers(response, 60*60*24*7)  # 7 days
-            return response
+        if not cached_tile:
+            # Let the view handle fetching the tile
+            return None
             
-        # Let the view handle it
-        return None
+        # Handle conditional requests with If-None-Match
+        etag_key = f"osm_tile:{z}:{x}:{y}:metadata:etag"
+        cached_etag = cache.get(etag_key)
+        
+        if cached_etag and 'HTTP_IF_NONE_MATCH' in request.META:
+            client_etag = request.META['HTTP_IF_NONE_MATCH']
+            # Normalize ETags by removing quotes for comparison
+            client_etag_clean = client_etag.replace('"', '')
+            cached_etag_clean = cached_etag.replace('"', '')
+            
+            if client_etag_clean == cached_etag_clean:
+                response = HttpResponse(status=304)
+                self._add_cache_headers(response, 60*60*24*7)
+                response['ETag'] = cached_etag
+                return response
+        
+        # Serve from cache
+        response = HttpResponse(cached_tile, content_type='image/png')
+        self._add_cache_headers(response, 60*60*24*7)  # 7 days
+        if cached_etag:
+            response['ETag'] = cached_etag
+        
+        return response
         
     def process_response(self, request, response):
         """

@@ -23,7 +23,7 @@ import logging
 import requests
 import sys
 from io import BytesIO
-from cache_system import MapCache, SpatialCache
+from cache_system import MapCache, CACHE_TIMEOUTS
 from django.core.cache import cache
 
 logger = logging.getLogger('bopmaps')
@@ -458,55 +458,124 @@ class UserMapSettingsViewSet(viewsets.ModelViewSet):
 # Tile proxy view
 class OSMTileView(APIView):
     """
-    Proxy view for OpenStreetMap tiles with caching
+    Proxy view for OpenStreetMap tiles with caching and rate limiting
+    Compliant with OSM Tile Usage Policy: https://operations.osmfoundation.org/policies/tiles/
     """
     authentication_classes = []  # No authentication required
     permission_classes = []  # No permissions required
     
+    # OSM tile server configuration
+    OSM_TILE_URL = "https://tile.openstreetmap.org"
+    MAX_RETRIES = 3
+    BASE_TIMEOUT = 10
+    MAX_ZOOM = 19  # OSM's max zoom level
+    
     def get_authenticators(self):
-        """Override to ensure no authentication is required"""
         return []
     
     def get_permissions(self):
-        """Override to ensure no permissions are required"""
         return []
     
-    def get(self, request, z, x, y, format=None):
-        """
-        Get a map tile, either from cache or from OSM
-        """
-        # Validate tile coordinates
-        if not (0 <= x < 2**z and 0 <= y < 2**z):
-            return HttpResponse(status=400, content="Invalid tile coordinates")
-
-        # Check cache first
-        cached_tile = MapCache.get_tile(z, x, y)
-        if cached_tile:
-            response = HttpResponse(cached_tile, content_type="image/png")
-            response["Access-Control-Allow-Origin"] = "*"
-            response["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-            response["Access-Control-Max-Age"] = "1000"
-            response["Access-Control-Allow-Headers"] = "X-Requested-With, Content-Type"
-            response["Cache-Control"] = "public, max-age=2592000"  # 30 days
-            return response
-        
-        # If not in cache, fetch from OSM with retries
-        osm_url = f"https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-        max_retries = 3
-        timeout = 10  # Increased timeout
-        
-        headers = {
+    def validate_tile_request(self, z, x, y):
+        """Validate tile coordinates and zoom level"""
+        try:
+            z, x, y = int(z), int(x), int(y)
+            if not (0 <= z <= self.MAX_ZOOM):
+                return False, "Invalid zoom level"
+            if not (0 <= x < 2**z and 0 <= y < 2**z):
+                return False, "Invalid tile coordinates"
+            return True, None
+        except ValueError:
+            return False, "Invalid coordinate format"
+    
+    def get_osm_headers(self):
+        """Get headers required by OSM tile server"""
+        return {
             'User-Agent': 'BOPMaps/1.0 (+https://bopmaps.com)',  # Required by OSM
             'Accept': 'image/png',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate',
             'Connection': 'keep-alive',
-            'Referer': 'https://bopmaps.com'
+            'Referer': 'https://bopmaps.com',
+            'If-Modified-Since': None,  # Will be set if we have cached data
+            'If-None-Match': None  # Will be set if we have an ETag
         }
+    
+    def add_response_headers(self, response, source="cache"):
+        """Add standard response headers"""
+        response["Access-Control-Allow-Origin"] = "*"
+        response["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        response["Access-Control-Max-Age"] = "1000"
+        response["Access-Control-Allow-Headers"] = "X-Requested-With, Content-Type"
         
-        for attempt in range(max_retries):
+        if source == "osm":
+            # For fresh tiles from OSM, cache for 7 days (OSM recommendation)
+            response["Cache-Control"] = "public, max-age=604800"
+        else:
+            # For cached tiles, allow caching for 30 days
+            response["Cache-Control"] = "public, max-age=2592000"
+        
+        return response
+    
+    def get(self, request, z, x, y, format=None):
+        """Get a map tile, either from cache or from OSM"""
+        # Validate request
+        is_valid, error_message = self.validate_tile_request(z, x, y)
+        if not is_valid:
+            logger.warning(f"Invalid tile request: {error_message} - z={z}, x={x}, y={y}")
+            return HttpResponse(status=400, content=error_message)
+
+        # Check cache first
+        osm_tile_key = f"osm_tile:{z}:{x}:{y}"
+        cached_data = MapCache.get_tile(z, x, y)
+        # Get ETag directly from the cache to ensure we're using the right key
+        cached_etag = cache.get(f"{osm_tile_key}:metadata:etag")
+        logger.info(f"Cached ETag from database: '{cached_etag}'")
+        
+        # Handle conditional requests with If-None-Match header
+        if cached_etag and 'HTTP_IF_NONE_MATCH' in request.META:
+            client_etag = request.META['HTTP_IF_NONE_MATCH']
+            
+            # Normalize ETags by removing quotes
+            client_etag_clean = client_etag.replace('"', '')
+            cached_etag_clean = cached_etag.replace('"', '')
+            
+            logger.info(f"HTTP_IF_NONE_MATCH: '{request.META['HTTP_IF_NONE_MATCH']}'")
+            logger.info(f"Normalized ETags - Client: '{client_etag_clean}' vs Cached: '{cached_etag_clean}'")
+            
+            # Compare the ETags after normalization
+            if client_etag_clean == cached_etag_clean:
+                # Return 304 Not Modified with appropriate headers
+                logger.info(f"Returning 304 Not Modified for tile z={z}, x={x}, y={y}")
+                response = HttpResponse(status=304)
+                self.add_response_headers(response, source="cache")
+                response["ETag"] = client_etag  # Use the client's format for consistency
+                return response
+            else:
+                logger.info(f"ETag mismatch for tile z={z}, x={x}, y={y}")
+        elif 'HTTP_IF_NONE_MATCH' in request.META:
+            logger.info(f"If-None-Match header present, but no cached ETag: {request.META['HTTP_IF_NONE_MATCH']}")
+        elif cached_etag:
+            logger.info(f"Cached ETag present, but no If-None-Match header: {cached_etag}")
+        
+        if cached_data:
+            response = HttpResponse(cached_data, content_type="image/png")
+            self.add_response_headers(response, source="cache")
+            if cached_etag:
+                response["ETag"] = cached_etag
+            return response
+        
+        # Prepare headers for OSM request
+        headers = self.get_osm_headers()
+        if cached_etag:
+            headers['If-None-Match'] = cached_etag
+        
+        # Fetch from OSM with retries
+        osm_url = f"{self.OSM_TILE_URL}/{z}/{x}/{y}.png"
+        
+        for attempt in range(self.MAX_RETRIES):
             try:
-                current_timeout = timeout * (attempt + 1)  # Progressive timeout
+                current_timeout = self.BASE_TIMEOUT * (attempt + 1)  # Progressive timeout
                 response = requests.get(
                     osm_url,
                     headers=headers,
@@ -515,59 +584,72 @@ class OSMTileView(APIView):
                 )
                 
                 if response.status_code == 200:
-                    # Store in cache
+                    # Store in cache with metadata
+                    logger.info(f"Response headers: {response.headers}")
                     MapCache.set_tile(z, x, y, response.content)
+                    if 'ETag' in response.headers:
+                        etag_value = response.headers['ETag']
+                        logger.info(f"Storing ETag: {etag_value} for z={z}, x={x}, y={y}")
+                        # Store the ETag directly using the actual tile coordinates
+                        etag_cache_key = f"osm_tile:{z}:{x}:{y}"
+                        # We store the ETag as-is to ensure we can properly handle it
+                        # during conditional requests
+                        cache.set(f"{etag_cache_key}:metadata:etag", etag_value, timeout=CACHE_TIMEOUTS['tile'])
+                    else:
+                        logger.warning(f"No ETag in response headers for z={z}, x={x}, y={y}")
                     
-                    # Return response with appropriate headers
+                    # Return response
                     tile_response = HttpResponse(response.content, content_type="image/png")
-                    tile_response["Access-Control-Allow-Origin"] = "*"
-                    tile_response["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-                    tile_response["Access-Control-Max-Age"] = "1000"
-                    tile_response["Access-Control-Allow-Headers"] = "X-Requested-With, Content-Type"
-                    tile_response["Cache-Control"] = "public, max-age=2592000"  # 30 days
-                    
+                    self.add_response_headers(tile_response, source="osm")
                     if 'ETag' in response.headers:
                         tile_response["ETag"] = response.headers["ETag"]
-                    
                     return tile_response
+                
+                elif response.status_code == 304:
+                    # Tile hasn't changed, use cached version
+                    if cached_data:
+                        response = HttpResponse(cached_data, content_type="image/png")
+                        self.add_response_headers(response, source="cache")
+                        if cached_etag:
+                            response["ETag"] = cached_etag
+                        return response
+                    # If we get here, something's wrong with our cache
+                    logger.error(f"304 received but no cached data available: z={z}, x={x}, y={y}")
                     
                 elif response.status_code == 404:
                     logger.warning(f"OSM tile not found: z={z}, x={x}, y={y}")
                     return HttpResponse(status=404)
-                    
+                
                 elif response.status_code == 429:
                     logger.warning(f"OSM rate limit exceeded (attempt {attempt + 1}): z={z}, x={x}, y={y}")
-                    if attempt < max_retries - 1:
+                    if attempt < self.MAX_RETRIES - 1:
                         import time
                         time.sleep(2 ** attempt)  # Exponential backoff
                         continue
                     return HttpResponse(status=429, content="Rate limit exceeded")
-                    
+                
                 else:
                     logger.warning(f"OSM tile request failed with status {response.status_code}: z={z}, x={x}, y={y}")
-                    if attempt < max_retries - 1:
+                    if attempt < self.MAX_RETRIES - 1:
                         continue
                     return HttpResponse(status=response.status_code)
-                    
+                
             except requests.exceptions.Timeout:
                 logger.warning(f"OSM tile request timed out (attempt {attempt + 1}): z={z}, x={x}, y={y}")
-                if attempt < max_retries - 1:
+                if attempt < self.MAX_RETRIES - 1:
                     continue
                 return HttpResponse(status=504)  # Gateway Timeout
                 
             except requests.exceptions.RequestException as e:
                 logger.error(f"Error fetching OSM tile: {str(e)}")
-                if attempt < max_retries - 1:
+                if attempt < self.MAX_RETRIES - 1:
                     continue
                 return HttpResponse(status=500)
-                
+        
         return HttpResponse(status=503)  # Service Unavailable after all retries
     
     def options(self, request, *args, **kwargs):
         """Handle preflight requests"""
         response = HttpResponse()
-        response["Access-Control-Allow-Origin"] = "*"
-        response["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-        response["Access-Control-Max-Age"] = "1000"
-        response["Access-Control-Allow-Headers"] = "X-Requested-With, Content-Type"
+        self.add_response_headers(response)
         return response

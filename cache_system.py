@@ -216,6 +216,57 @@ class MapCache:
         """
         cache_key = f"osm_tile:{z}:{x}:{y}"
         cache.set(cache_key, data, timeout=CACHE_TIMEOUTS['tile'])
+    
+    @staticmethod
+    def get_tile_metadata(cache_key: str, metadata_key: str) -> Optional[str]:
+        """
+        Get metadata for a tile (like ETags).
+        
+        Args:
+            cache_key: The tile cache key
+            metadata_key: The specific metadata key to retrieve
+            
+        Returns:
+            Metadata value or None if not in cache
+        """
+        # Extract z, x, y from the cache_key if it's in the format "tile_z_x_y"
+        parts = cache_key.split("_")
+        if len(parts) == 4 and parts[0] == "tile":
+            try:
+                z, x, y = int(parts[1]), int(parts[2]), int(parts[3])
+                metadata_cache_key = f"osm_tile:{z}:{x}:{y}:metadata:{metadata_key}"
+                return cache.get(metadata_cache_key)
+            except ValueError:
+                pass
+        
+        # Fallback to the original format
+        metadata_cache_key = f"{cache_key}:metadata:{metadata_key}"
+        return cache.get(metadata_cache_key)
+    
+    @staticmethod
+    def set_tile_metadata(cache_key: str, metadata_key: str, value: str) -> None:
+        """
+        Store metadata for a tile (like ETags).
+        
+        Args:
+            cache_key: The tile cache key
+            metadata_key: The specific metadata key to store
+            value: The metadata value to store
+        """
+        # Extract z, x, y from the cache_key if it's in the format "tile_z_x_y"
+        parts = cache_key.split("_")
+        if len(parts) == 4 and parts[0] == "tile":
+            try:
+                z, x, y = int(parts[1]), int(parts[2]), int(parts[3])
+                metadata_cache_key = f"osm_tile:{z}:{x}:{y}:metadata:{metadata_key}"
+                cache.set(metadata_cache_key, value, timeout=CACHE_TIMEOUTS['tile'])
+                return
+            except ValueError:
+                pass
+        
+        # Fallback to the original format
+        metadata_cache_key = f"{cache_key}:metadata:{metadata_key}"
+        cache.set(metadata_cache_key, value, timeout=CACHE_TIMEOUTS['tile'])
         
     @staticmethod
     def get_vector_data(data_type: str, lat: float, lng: float, zoom: int,
