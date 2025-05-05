@@ -24,6 +24,7 @@ import requests
 import sys
 from io import BytesIO
 from cache_system import MapCache, SpatialCache
+from django.core.cache import cache
 
 logger = logging.getLogger('bopmaps')
 
@@ -145,92 +146,84 @@ class BuildingViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        """
-        Filter buildings based on bounding box and zoom level
-        """
-        # Get query parameters
-        north = self.request.query_params.get('north')
-        south = self.request.query_params.get('south')
-        east = self.request.query_params.get('east')
-        west = self.request.query_params.get('west')
-        zoom = int(self.request.query_params.get('zoom', 16))
-        
-        # If bounding box parameters are missing, return empty queryset
-        if not all([north, south, east, west]):
-            return Building.objects.none()
-            
+        # Get bounds parameters
         try:
-            # Create a polygon from the bounds
-            bounds = Polygon.from_bbox((
-                float(west), float(south), float(east), float(north)
-            ))
+            north = float(self.request.query_params.get('north', 90))
+            south = float(self.request.query_params.get('south', -90))
+            east = float(self.request.query_params.get('east', 180))
+            west = float(self.request.query_params.get('west', -180))
+            zoom = int(self.request.query_params.get('zoom', 15))
             
-            # Base queryset
-            queryset = Building.objects.filter(geometry__intersects=bounds)
+            # Log the incoming request
+            logger.info(
+                'Building data requested - Bounds: N:%s, S:%s, E:%s, W:%s, Zoom:%s, User:%s',
+                north, south, east, west, zoom,
+                self.request.user.username if self.request.user.is_authenticated else 'Anonymous'
+            )
             
-            # Limit results based on zoom level to prevent excessive data transfer
-            if zoom < 14:
-                return queryset.order_by('-height')[:200]  # Prioritize taller buildings
-            elif zoom < 16:
-                return queryset.order_by('-height')[:500]
-            else:
-                return queryset.order_by('-height')[:1000]
+            # Create cache key
+            cache_key = f'buildings_bbox_{north}_{south}_{east}_{west}_{zoom}'
+            
+            # Try to get from cache
+            cached_data = cache.get(cache_key)
+            if cached_data:
+                logger.info('Building data served from cache for key: %s', cache_key)
+                return cached_data
                 
-        except (ValueError, TypeError, ValidationError) as e:
-            logger.error(f"Error in BuildingViewSet.get_queryset: {e}")
-            return Building.objects.none()
-    
-    def list(self, request, *args, **kwargs):
-        """
-        Override list method to add caching
-        """
-        # Try to get from cache first
-        lat = (float(request.query_params.get('north', 0)) + 
-              float(request.query_params.get('south', 0))) / 2
-        lng = (float(request.query_params.get('east', 0)) + 
-              float(request.query_params.get('west', 0))) / 2
-        zoom = int(request.query_params.get('zoom', 16))
-        
-        # Create additional params for cache key
-        additional_params = {
-            'n': request.query_params.get('north'),
-            's': request.query_params.get('south'),
-            'e': request.query_params.get('east'),
-            'w': request.query_params.get('west')
-        }
-        
-        # Try to get from cache
-        cached_data = MapCache.get_vector_data(
-            data_type='buildings',
-            lat=lat,
-            lng=lng,
-            zoom=zoom,
-            additional_params=additional_params
-        )
-        
-        if cached_data:
-            return Response(cached_data)
+            # Create a polygon from the bounds
+            bounds = Polygon.from_bbox((west, south, east, north))
             
-        # If not in cache, fetch from database
-        queryset = self.get_queryset()
-        serializer = self.get_serializer(
-            queryset, 
-            many=True, 
-            context={'zoom': zoom}
-        )
-        data = serializer.data
-        
-        # Cache the result
-        MapCache.set_vector_data(
-            data_type='buildings',
-            lat=lat,
-            lng=lng,
-            zoom=zoom,
-            data=data,
-            additional_params=additional_params
-        )
-        
-        return Response(data)
+            # Adjust detail level based on zoom
+            if zoom < 14:
+                logger.debug('Low zoom level (%s) - serving simplified buildings', zoom)
+                queryset = Building.objects.filter(
+                    geometry__intersects=bounds
+                ).simplify(
+                    tolerance=0.0001
+                )[:500]
+            elif zoom < 16:
+                logger.debug('Medium zoom level (%s) - serving medium detail buildings', zoom)
+                queryset = Building.objects.filter(
+                    geometry__intersects=bounds
+                ).simplify(
+                    tolerance=0.00005
+                )[:1000]
+            else:
+                logger.debug('High zoom level (%s) - serving full detail buildings', zoom)
+                queryset = Building.objects.filter(
+                    geometry__intersects=bounds
+                )[:2000]
+            
+            # Cache the results
+            cache.set(cache_key, queryset, timeout=60*60*24)  # Cache for 24 hours
+            logger.info('Building data cached with key: %s', cache_key)
+            
+            # Log the response size
+            logger.info('Returning %d buildings for request', len(queryset))
+            
+            return queryset
+            
+        except Exception as e:
+            logger.error('Error processing building request: %s', str(e))
+            raise
+
+    def list(self, request, *args, **kwargs):
+        try:
+            queryset = self.get_queryset()
+            serializer = self.get_serializer(queryset, many=True)
+            response_data = serializer.data
+            
+            # Log response metrics
+            logger.info(
+                'Building data response sent - Size: %d buildings, Data size: %.2f KB',
+                len(response_data),
+                len(str(response_data)) / 1024
+            )
+            
+            return Response(response_data)
+        except Exception as e:
+            logger.error('Error in building list endpoint: %s', str(e))
+            raise
 
 
 class RoadViewSet(viewsets.ReadOnlyModelViewSet):
@@ -467,31 +460,114 @@ class OSMTileView(APIView):
     """
     Proxy view for OpenStreetMap tiles with caching
     """
-    permission_classes = []  # Public access for tiles
+    authentication_classes = []  # No authentication required
+    permission_classes = []  # No permissions required
+    
+    def get_authenticators(self):
+        """Override to ensure no authentication is required"""
+        return []
+    
+    def get_permissions(self):
+        """Override to ensure no permissions are required"""
+        return []
     
     def get(self, request, z, x, y, format=None):
         """
         Get a map tile, either from cache or from OSM
         """
+        # Validate tile coordinates
+        if not (0 <= x < 2**z and 0 <= y < 2**z):
+            return HttpResponse(status=400, content="Invalid tile coordinates")
+
         # Check cache first
         cached_tile = MapCache.get_tile(z, x, y)
         if cached_tile:
-            return HttpResponse(cached_tile, content_type="image/png")
+            response = HttpResponse(cached_tile, content_type="image/png")
+            response["Access-Control-Allow-Origin"] = "*"
+            response["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            response["Access-Control-Max-Age"] = "1000"
+            response["Access-Control-Allow-Headers"] = "X-Requested-With, Content-Type"
+            response["Cache-Control"] = "public, max-age=2592000"  # 30 days
+            return response
         
-        # If not in cache, fetch from OSM
+        # If not in cache, fetch from OSM with retries
         osm_url = f"https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+        max_retries = 3
+        timeout = 10  # Increased timeout
         
-        try:
-            response = requests.get(osm_url, stream=True, timeout=5)
-            
-            if response.status_code == 200:
-                # Store in cache
-                MapCache.set_tile(z, x, y, response.content)
-                return HttpResponse(response.content, content_type="image/png")
-            else:
-                logger.warning(f"OSM tile request failed: {response.status_code}")
-                return HttpResponse(status=response.status_code)
+        headers = {
+            'User-Agent': 'BOPMaps/1.0 (+https://bopmaps.com)',  # Required by OSM
+            'Accept': 'image/png',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Referer': 'https://bopmaps.com'
+        }
+        
+        for attempt in range(max_retries):
+            try:
+                current_timeout = timeout * (attempt + 1)  # Progressive timeout
+                response = requests.get(
+                    osm_url,
+                    headers=headers,
+                    stream=True,
+                    timeout=current_timeout
+                )
                 
-        except requests.RequestException as e:
-            logger.error(f"Error fetching OSM tile: {e}")
-            return HttpResponse(status=500)
+                if response.status_code == 200:
+                    # Store in cache
+                    MapCache.set_tile(z, x, y, response.content)
+                    
+                    # Return response with appropriate headers
+                    tile_response = HttpResponse(response.content, content_type="image/png")
+                    tile_response["Access-Control-Allow-Origin"] = "*"
+                    tile_response["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+                    tile_response["Access-Control-Max-Age"] = "1000"
+                    tile_response["Access-Control-Allow-Headers"] = "X-Requested-With, Content-Type"
+                    tile_response["Cache-Control"] = "public, max-age=2592000"  # 30 days
+                    
+                    if 'ETag' in response.headers:
+                        tile_response["ETag"] = response.headers["ETag"]
+                    
+                    return tile_response
+                    
+                elif response.status_code == 404:
+                    logger.warning(f"OSM tile not found: z={z}, x={x}, y={y}")
+                    return HttpResponse(status=404)
+                    
+                elif response.status_code == 429:
+                    logger.warning(f"OSM rate limit exceeded (attempt {attempt + 1}): z={z}, x={x}, y={y}")
+                    if attempt < max_retries - 1:
+                        import time
+                        time.sleep(2 ** attempt)  # Exponential backoff
+                        continue
+                    return HttpResponse(status=429, content="Rate limit exceeded")
+                    
+                else:
+                    logger.warning(f"OSM tile request failed with status {response.status_code}: z={z}, x={x}, y={y}")
+                    if attempt < max_retries - 1:
+                        continue
+                    return HttpResponse(status=response.status_code)
+                    
+            except requests.exceptions.Timeout:
+                logger.warning(f"OSM tile request timed out (attempt {attempt + 1}): z={z}, x={x}, y={y}")
+                if attempt < max_retries - 1:
+                    continue
+                return HttpResponse(status=504)  # Gateway Timeout
+                
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Error fetching OSM tile: {str(e)}")
+                if attempt < max_retries - 1:
+                    continue
+                return HttpResponse(status=500)
+                
+        return HttpResponse(status=503)  # Service Unavailable after all retries
+    
+    def options(self, request, *args, **kwargs):
+        """Handle preflight requests"""
+        response = HttpResponse()
+        response["Access-Control-Allow-Origin"] = "*"
+        response["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        response["Access-Control-Max-Age"] = "1000"
+        response["Access-Control-Allow-Headers"] = "X-Requested-With, Content-Type"
+        return response

@@ -10,6 +10,7 @@ from django.conf import settings
 from django.core.cache import caches
 from django.http import HttpResponse
 from cache_system import MapCache
+from django.core.cache import cache
 
 logger = logging.getLogger('bopmaps.cache')
 
@@ -173,6 +174,63 @@ class VectorDataOptimizationMiddleware(MiddlewareMixin):
     # Pattern to match vector data URLs
     VECTOR_URL_PATTERN = re.compile(r'^/api/geo/(buildings|roads|parks)/$')
     
+    def __init__(self, get_response):
+        self.get_response = get_response
+        self.logger = logging.getLogger('bopmaps.geo.vector')
+        
+    def __call__(self, request):
+        # Only process vector data endpoints
+        if '/api/geo/buildings/' in request.path:
+            self.logger.info(
+                'Vector data request received - Path: %s, Method: %s, User: %s',
+                request.path,
+                request.method,
+                request.user.username if request.user.is_authenticated else 'Anonymous'
+            )
+            
+            # Log query parameters
+            if request.GET:
+                self.logger.debug('Vector request parameters: %s', dict(request.GET))
+
+        response = self.get_response(request)
+
+        # Log response details for vector data endpoints
+        if '/api/geo/buildings/' in request.path:
+            self.logger.info(
+                'Vector data response sent - Status: %d, Size: %d bytes',
+                response.status_code,
+                len(response.content) if hasattr(response, 'content') else 0
+            )
+
+            # Log cache status if present in response headers
+            cache_status = response.headers.get('X-Cache-Status')
+            if cache_status:
+                self.logger.info('Cache status for vector request: %s', cache_status)
+
+        return response
+
+    def process_view(self, request, view_func, view_args, view_kwargs):
+        # Log view information for vector data endpoints
+        if '/api/geo/buildings/' in request.path:
+            self.logger.debug(
+                'Processing vector data view - View: %s, Args: %s, Kwargs: %s',
+                view_func.__name__ if hasattr(view_func, '__name__') else 'Unknown',
+                view_args,
+                view_kwargs
+            )
+        return None
+
+    def process_exception(self, request, exception):
+        # Log any exceptions in vector data processing
+        if '/api/geo/buildings/' in request.path:
+            self.logger.error(
+                'Error processing vector data request - Path: %s, Error: %s',
+                request.path,
+                str(exception),
+                exc_info=True
+            )
+        return None
+        
     def process_request(self, request):
         """
         Process the request before it reaches the view

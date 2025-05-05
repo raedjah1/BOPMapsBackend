@@ -107,8 +107,8 @@ class CachedRegionSerializer(GeoFeatureModelSerializer):
         model = CachedRegion
         geo_field = 'bounds'
         fields = ('id', 'name', 'north', 'south', 'east', 'west',
-                 'min_zoom', 'max_zoom', 'created_at', 'updated_at',
-                 'size_mb', 'bundle_url')
+                 'min_zoom', 'max_zoom', 'created_at', 'last_accessed',
+                 'access_count', 'size_mb', 'bundle_url')
                  
     def get_size_mb(self, obj):
         return round(obj.size_kb / 1024, 2)
