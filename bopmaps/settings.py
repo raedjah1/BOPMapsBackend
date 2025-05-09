@@ -32,7 +32,7 @@ SECRET_KEY = config('SECRET_KEY', default='django-insecure-replace-this-in-produ
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=lambda v: [s.strip() for s in v.split(',')])
+ALLOWED_HOSTS = ['*']  # Allow all hosts for demo purposes
 
 
 # Application definition
@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     # Third-party apps
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'django_filters',
     'leaflet',
@@ -73,6 +74,8 @@ MIDDLEWARE = [
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    'geo.middleware.MapTileOptimizationMiddleware',
+    'geo.middleware.VectorDataOptimizationMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -224,6 +227,25 @@ SIMPLE_JWT = {
 CORS_ALLOW_ALL_ORIGINS = True if DEBUG else False
 CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000', cast=lambda v: [s.strip() for s in v.split(',')])
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
 
 # Celery Settings - commented out as Redis is not running
 # CELERY_BROKER_URL = config('REDIS_URL', default='redis://localhost:6379/0')
@@ -294,79 +316,141 @@ LEAFLET_CONFIG = {
 # Cache configuration
 CACHES = {
     'default': {
-        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-        'LOCATION': 'unique-snowflake',
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': config('REDIS_URL', default='redis://127.0.0.1:6379/1'),
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'SOCKET_CONNECT_TIMEOUT': 5,
+            'SOCKET_TIMEOUT': 5,
+            'RETRY_ON_TIMEOUT': True,
+            'MAX_CONNECTIONS': 1000,
+            'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',
+            'COMPRESS_MIN_LEN': 10,
+            'KEY_PREFIX': 'bopmaps',
+        },
+        'TIMEOUT': 60 * 60 * 24 * 7,  # 7 days
+    },
+    'tiles': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': config('REDIS_URL', default='redis://127.0.0.1:6379/2'),
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'SOCKET_CONNECT_TIMEOUT': 5,
+            'SOCKET_TIMEOUT': 5,
+            'RETRY_ON_TIMEOUT': True,
+            'MAX_CONNECTIONS': 500,
+            'KEY_PREFIX': 'tiles',
+        },
+        'TIMEOUT': 60 * 60 * 24 * 30,  # 30 days for tiles
+    },
+    'sessions': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': config('REDIS_URL', default='redis://127.0.0.1:6379/3'),
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'SOCKET_CONNECT_TIMEOUT': 5,
+            'SOCKET_TIMEOUT': 5,
+            'RETRY_ON_TIMEOUT': True,
+            'MAX_CONNECTIONS': 100,
+            'KEY_PREFIX': 'session',
+        },
+        'TIMEOUT': 60 * 60 * 24,  # 1 day
     }
 }
 
-# Session settings - using database sessions instead of cache
-SESSION_ENGINE = 'django.contrib.sessions.backends.db'
+# Use Redis for session storage
+SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+SESSION_CACHE_ALIAS = 'sessions'
+
+# Cache cleanup settings
+TILE_CACHE_DAYS = 30  # How long to keep tiles
+REGION_CACHE_DAYS = 60  # How long to keep region bundles
+MAX_CACHE_SIZE_BYTES = 10 * 1024 * 1024 * 1024  # 10GB max cache size
+
+# Celery Beat schedule for cleanup tasks
+CELERY_BEAT_SCHEDULE = {
+    'cleanup-expired-data': {
+        'task': 'geo.tasks.cleanup_expired_data',
+        'schedule': timedelta(days=1),  # Run daily
+    },
+    'monitor-storage': {
+        'task': 'geo.tasks.monitor_storage_usage',
+        'schedule': timedelta(hours=1),  # Run hourly
+    },
+}
+
+# Cache Settings for static files using CDN
+if not DEBUG:
+    AWS_S3_OBJECT_PARAMETERS = {
+        'CacheControl': 'max-age=86400',  # 1 day in seconds
+    }
+
+# Cache Settings
+CACHE_MIDDLEWARE_SECONDS = 60 * 15  # 15 minutes
+CACHE_MIDDLEWARE_KEY_PREFIX = 'bopmaps_middleware'
 
 # Custom User Model
 AUTH_USER_MODEL = 'users.User'
 
-# Logging Configuration
+# Logging configuration
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
         'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
-            'style': '{',
+            'format': '%(levelname)s %(asctime)s %(module)s %(process)d %(thread)d %(message)s'
         },
         'simple': {
-            'format': '{levelname} {message}',
-            'style': '{',
+            'format': '%(levelname)s %(message)s'
         },
-    },
-    'filters': {
-        'require_debug_true': {
-            '()': 'django.utils.log.RequireDebugTrue',
+        'cache': {
+            'format': '%(levelname)s [%(asctime)s] Cache: %(message)s'
         },
     },
     'handlers': {
         'console': {
-            'level': 'INFO',
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
         },
-    },
-    'root': {
-        'handlers': ['console'],
-        'level': 'INFO',
+        'file': {
+            'class': 'logging.FileHandler',
+            'filename': 'logs/bopmaps.log',
+            'formatter': 'verbose',
+        },
+        'cache_file': {
+            'class': 'logging.FileHandler',
+            'filename': 'logs/cache.log',
+            'formatter': 'cache',
+        },
     },
     'loggers': {
-        'django': {
-            'handlers': ['console'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'django.db.backends': {
-            'handlers': ['console'],
-            'level': 'WARNING',
-            'propagate': False,
-            'filters': ['require_debug_true'],
-        },
         'bopmaps': {
-            'handlers': ['console'],
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'bopmaps.cache': {
+            'handlers': ['console', 'cache_file'],
             'level': 'INFO',
             'propagate': False,
+        },
+        'bopmaps.geo': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': True,
         },
     },
 }
 
-# Ensure logs directory exists and add file handler if not in debug mode
-if not DEBUG:
-    os.makedirs(os.path.join(BASE_DIR, 'logs'), exist_ok=True)
-    LOGGING['handlers']['file'] = {
-        'level': 'INFO',
-        'class': 'logging.FileHandler',
-        'filename': os.path.join(BASE_DIR, 'logs/bopmaps.log'),
-        'formatter': 'verbose',
-    }
-    LOGGING['root']['handlers'] = ['console', 'file']
-    LOGGING['loggers']['django']['handlers'] = ['console', 'file']
-    LOGGING['loggers']['bopmaps']['handlers'] = ['console', 'file']
+# Cache timeouts
+TILE_CACHE_TIMEOUT = 60 * 60 * 24 * 30  # 30 days
+BUILDING_CACHE_TIMEOUT = 60 * 60 * 24 * 7  # 7 days
+VECTOR_CACHE_TIMEOUT = 60 * 60 * 24 * 7  # 7 days
+
+# Cache size limits (in bytes)
+MAX_CACHE_SIZE_BYTES = 10 * 1024 * 1024 * 1024  # 10GB
+MAX_TILE_CACHE_SIZE = 4 * 1024 * 1024 * 1024    # 4GB
+MAX_VECTOR_CACHE_SIZE = 2 * 1024 * 1024 * 1024  # 2GB
 
 # API Documentation Settings
 SPECTACULAR_SETTINGS = {
@@ -433,3 +517,15 @@ if DEBUG:
     DEBUG_TOOLBAR_CONFIG = {
         'SHOW_TOOLBAR_CALLBACK': lambda request: DEBUG,
     }
+
+# CSRF Settings
+CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', default='http://localhost:3000', cast=lambda v: [s.strip() for s in v.split(',')])
+CSRF_USE_SESSIONS = True
+CSRF_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SAMESITE = 'Lax'
+
+# Exempt certain URLs from CSRF protection
+CSRF_EXEMPT_URLS = [
+    r'^api/geo/tiles/.*$',  # Tile requests
+]

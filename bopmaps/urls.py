@@ -22,11 +22,15 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, Sp
 from rest_framework_simplejwt.views import TokenVerifyView
 from django.views.generic.base import RedirectView
 from .admin import bopmaps_admin_site
+from .views import IndexView
 
 # Import admin registrations to ensure they're loaded
 from . import admin_registrations
 
 urlpatterns = [
+    # Landing page
+    path('', IndexView.as_view(), name='index'),
+    
     # Admin - with custom admin site
     path('admin/', bopmaps_admin_site.urls),
     

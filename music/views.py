@@ -27,17 +27,69 @@ from .utils import (
     get_recently_played_tracks, 
     get_user_playlists, 
     get_playlist_tracks,
-    get_track_details
+    get_track_details,
+    get_saved_tracks
 )
 
 User = get_user_model()
 logger = logging.getLogger('bopmaps')
 
-# View Functions
+# First define all serializers
+class SpotifyAuthSerializer(serializers.Serializer):
+    """Serializer for Spotify auth endpoints"""
+    auth_url = serializers.URLField()
+
+
+class SpotifyCallbackSerializer(serializers.Serializer):
+    """Serializer for Spotify callback request"""
+    code = serializers.CharField(required=True)
+    
+    
+class SpotifyCallbackResponseSerializer(serializers.Serializer):
+    """Serializer for Spotify callback response"""
+    message = serializers.CharField()
+    user = serializers.DictField()
+    service = serializers.DictField()
+
+
+class MusicServiceSerializer(serializers.Serializer):
+    """Serializer for music service information"""
+    service_type = serializers.CharField()
+    connected_at = serializers.DateTimeField()
+    is_active = serializers.BooleanField()
+
+
+class SpotifyResponseSerializer(serializers.Serializer):
+    """Generic serializer for Spotify API responses"""
+    # This is a dynamic serializer that will adapt to various Spotify API responses
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Don't validate fields that aren't explicitly declared
+        self.allow_unknown_fields = True
+    
+    def to_representation(self, instance):
+        # Pass through the Spotify API response
+        return instance
+
+
+class MusicTrackSerializer(serializers.Serializer):
+    """Serializer for music track data"""
+    id = serializers.CharField()
+    title = serializers.CharField()
+    artist = serializers.CharField()
+    album = serializers.CharField(required=False, allow_null=True)
+    album_art = serializers.URLField(required=False, allow_null=True)
+    url = serializers.URLField()
+    service = serializers.CharField()
+    preview_url = serializers.URLField(required=False, allow_null=True)
+
+
+# Then define view functions
 @login_required
 def connect_services(request):
     """Page for connecting music services"""
     return render(request, 'music/connect_services.html')
+
 
 def spotify_auth(request):
     """Start Spotify OAuth flow"""
@@ -56,7 +108,10 @@ def spotify_mobile_auth(request):
     
     mock_request = MockRequest()
     auth_url = SpotifyService.get_auth_url(mock_request)
-    return Response({'auth_url': auth_url})
+    
+    # Use the serializer for response
+    serializer = SpotifyAuthSerializer({"auth_url": auth_url})
+    return Response(serializer.data)
 
 
 def spotify_callback(request):
@@ -187,10 +242,13 @@ def callback_handler(request):
     This is used with the fixed redirect URI workflow.
     """
     try:
+        # Use the serializer for request validation
+        serializer = SpotifyCallbackSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
         # Get data from request
-        code = request.data.get('code')
-        if not code:
-            return Response({'error': 'No authorization code provided'}, status=status.HTTP_400_BAD_REQUEST)
+        code = serializer.validated_data.get('code')
         
         # Create a mock request to pass to exchange_code_for_tokens
         class MockRequest:
@@ -233,7 +291,8 @@ def callback_handler(request):
         user.save()
         service = MusicServiceAuthMixin.save_tokens(user, 'spotify', tokens_data)
         
-        return Response({
+        # Use the response serializer
+        response_data = {
             'message': 'Spotify connected successfully',
             'user': {
                 'id': user.id,
@@ -244,7 +303,9 @@ def callback_handler(request):
                 'service_type': service.service_type,
                 'expires_at': service.expires_at
             }
-        })
+        }
+        response_serializer = SpotifyCallbackResponseSerializer(response_data)
+        return Response(response_serializer.data)
         
     except Exception as e:
         logger.error(f"Error in callback_handler: {str(e)}")
@@ -257,12 +318,13 @@ def connection_success(request):
     return render(request, 'music/connection_success.html')
 
 
-# REST API Viewsets
+# Then define ViewSets
 class MusicServiceViewSet(viewsets.ViewSet):
     """
     API endpoints for music service connections
     """
     permission_classes = [IsAuthenticated]
+    serializer_class = MusicServiceSerializer  # Add serializer class
     
     @action(detail=False, methods=['GET'])
     def connected_services(self, request):
@@ -272,7 +334,10 @@ class MusicServiceViewSet(viewsets.ViewSet):
                  'connected_at': service.expires_at - timedelta(hours=1),  # Approximate connection time
                  'is_active': service.expires_at > timezone.now()
                 } for service in services]
-        return Response(data)
+        
+        # Use the serializer
+        serializer = self.serializer_class(data, many=True)
+        return Response(serializer.data)
     
     @action(detail=False, methods=['DELETE'], url_path='disconnect/(?P<service_type>[^/.]+)')
     def disconnect_service(self, request, service_type=None):
@@ -299,6 +364,7 @@ class SpotifyViewSet(viewsets.ViewSet):
     API endpoints for Spotify integration
     """
     permission_classes = [IsAuthenticated]
+    serializer_class = SpotifyResponseSerializer  # Add serializer class
     
     def _get_spotify_service(self):
         """Get the user's Spotify service or return None"""
@@ -416,17 +482,21 @@ class SpotifyViewSet(viewsets.ViewSet):
         
         return Response(result)
 
-
-class MusicTrackSerializer(serializers.Serializer):
-    """Serializer for music track data"""
-    id = serializers.CharField()
-    title = serializers.CharField()
-    artist = serializers.CharField()
-    album = serializers.CharField(required=False, allow_null=True)
-    album_art = serializers.URLField(required=False, allow_null=True)
-    url = serializers.URLField()
-    service = serializers.CharField()
-    preview_url = serializers.URLField(required=False, allow_null=True)
+    @action(detail=False, methods=['GET'])
+    def saved_tracks(self, request):
+        """Get user's saved/liked tracks on Spotify"""
+        spotify_service = self._get_spotify_service()
+        if not spotify_service:
+            return Response({"error": "Spotify not connected"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        limit = request.query_params.get('limit', 50)
+        offset = request.query_params.get('offset', 0)
+        
+        result = SpotifyService.get_saved_tracks(spotify_service, limit, offset)
+        if 'error' in result:
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+            
+        return Response(result)
 
 
 class MusicTrackViewSet(viewsets.ViewSet):
@@ -434,6 +504,7 @@ class MusicTrackViewSet(viewsets.ViewSet):
     API endpoints for selecting music tracks for pins
     """
     permission_classes = [IsAuthenticated]
+    serializer_class = MusicTrackSerializer  # Add serializer class
     
     @action(detail=False, methods=['GET'])
     def search(self, request):
@@ -458,6 +529,16 @@ class MusicTrackViewSet(viewsets.ViewSet):
         limit = int(request.query_params.get('limit', 10))
         
         results = get_recently_played_tracks(request.user, service, limit)
+        return Response(results)
+    
+    @action(detail=False, methods=['GET'])
+    def saved_tracks(self, request):
+        """Get user's saved/liked tracks"""
+        service = request.query_params.get('service', None)
+        limit = int(request.query_params.get('limit', 50))
+        offset = int(request.query_params.get('offset', 0))
+        
+        results = get_saved_tracks(request.user, service, limit, offset)
         return Response(results)
     
     @action(detail=False, methods=['GET'])
