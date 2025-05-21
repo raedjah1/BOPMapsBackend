@@ -3,7 +3,7 @@ Utility functions for music service integration
 """
 from .models import MusicService
 # from .services import SpotifyService, AppleMusicService, SoundCloudService
-from .services import SpotifyService # Keep SpotifyService
+from .services import SpotifyService, AppleMusicService # Keep SpotifyService and add AppleMusicService
 import logging
 
 logger = logging.getLogger('bopmaps')
@@ -23,8 +23,8 @@ def get_service_class(service_type):
     """
     if service_type == 'spotify':
         return SpotifyService
-    # elif service_type == 'apple':
-    #     return AppleMusicService
+    elif service_type == 'apple':
+        return AppleMusicService
     # elif service_type == 'soundcloud':
     #     return SoundCloudService
     else:
@@ -71,20 +71,20 @@ def search_music(user, query, service_type=None, limit=10):
                     for track in service_results['tracks']['items']
                 ]
             
-            # elif service_type == 'apple' and 'error' not in service_results and 'results' in service_results:
-            #     if 'songs' in service_results['results']:
-            #         results['apple'] = [
-            #             {
-            #                 'id': track['id'],
-            #                 'title': track['attributes']['name'],
-            #                 'artist': track['attributes']['artistName'],
-            #                 'album': track['attributes']['albumName'],
-            #                 'album_art': track['attributes']['artwork']['url'].replace('{w}', '300').replace('{h}', '300'),
-            #                 'url': track['attributes'].get('url', ''),
-            #                 'service': 'apple'
-            #             }
-            #             for track in service_results['results']['songs']['data']
-            #         ]
+            elif service_type == 'apple' and 'error' not in service_results and 'results' in service_results:
+                if 'songs' in service_results['results']:
+                    results['apple'] = [
+                        {
+                            'id': track['id'],
+                            'title': track['attributes']['name'],
+                            'artist': track['attributes']['artistName'],
+                            'album': track['attributes']['albumName'],
+                            'album_art': track['attributes']['artwork']['url'].replace('{w}', '300').replace('{h}', '300'),
+                            'url': track['attributes'].get('url', ''),
+                            'service': 'apple'
+                        }
+                        for track in service_results['results']['songs']['data']
+                    ]
             
             # elif service_type == 'soundcloud' and 'error' not in service_results:
             #     results['soundcloud'] = [
@@ -145,20 +145,20 @@ def get_recently_played_tracks(user, service_type=None, limit=10):
                     for item in service_results['items']
                 ]
             
-            # elif service_type == 'apple' and 'error' not in service_results and 'data' in service_results:
-            #     results['apple'] = [
-            #         {
-            #             'id': item['id'],
-            #             'title': item['attributes']['name'],
-            #             'artist': item['attributes']['artistName'],
-            #             'album': item['attributes']['albumName'],
-            #             'album_art': item['attributes']['artwork']['url'].replace('{w}', '300').replace('{h}', '300'),
-            #             'url': item['attributes'].get('url', ''),
-            #             'played_at': item['attributes'].get('lastPlayedDate', ''),
-            #             'service': 'apple'
-            #         }
-            #         for item in service_results['data']
-            #     ]
+            elif service_type == 'apple' and 'error' not in service_results and 'data' in service_results:
+                results['apple'] = [
+                    {
+                        'id': item['id'],
+                        'title': item['attributes']['name'],
+                        'artist': item['attributes']['artistName'],
+                        'album': item['attributes']['albumName'],
+                        'album_art': item['attributes']['artwork']['url'].replace('{w}', '300').replace('{h}', '300'),
+                        'url': item['attributes'].get('url', ''),
+                        'played_at': item['attributes'].get('lastPlayedDate', ''),
+                        'service': 'apple'
+                    }
+                    for item in service_results['data']
+                ]
             
             # elif service_type == 'soundcloud' and 'error' not in service_results and 'collection' in service_results:
             #     results['soundcloud'] = [

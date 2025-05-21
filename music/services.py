@@ -8,6 +8,11 @@ from django.conf import settings
 from django.urls import reverse
 from django.utils import timezone
 import urllib.parse
+import jwt
+import time
+import logging
+
+logger = logging.getLogger('bopmaps')
 
 # Base classes for music service integrations
 class MusicServiceAuthMixin:
@@ -201,4 +206,168 @@ class SpotifyService:
         return SpotifyService.make_api_request(
             music_service, 
             f"me/tracks?limit={limit}&offset={offset}"
+        )
+
+# Apple Music Integration
+class AppleMusicService:
+    """Apple Music API service implementation"""
+    API_BASE_URL = "https://api.music.apple.com/v1"
+    
+    @staticmethod
+    def get_developer_token():
+        """Generate a developer token for Apple Music API"""
+        # This is done through a JWT generator using the Apple Music private key
+        # The developer token is used for API requests but doesn't authorize a specific user
+        key_id = settings.APPLE_MUSIC_KEY_ID
+        team_id = settings.APPLE_MUSIC_TEAM_ID
+        private_key = settings.APPLE_MUSIC_PRIVATE_KEY
+        
+        # Make private key usable by PyJWT
+        # The private key is stored as a string in settings, potentially with escaped newlines
+        # We need to replace any '\n' with actual newlines
+        if private_key.startswith('"') and private_key.endswith('"'):
+            private_key = private_key[1:-1]
+        private_key = private_key.replace('\\n', '\n')
+        
+        headers = {
+            'alg': 'ES256',
+            'kid': key_id
+        }
+        
+        payload = {
+            'iss': team_id,
+            'iat': int(time.time()),
+            'exp': int(time.time()) + 15777000  # 6 months
+        }
+        
+        try:
+            token = jwt.encode(payload, private_key, algorithm='ES256', headers=headers)
+            # Ensure we return a string (PyJWT >= 2.0.0 returns a string, < 2.0.0 returns bytes)
+            if isinstance(token, bytes):
+                return token.decode('utf-8')
+            return token
+        except Exception as e:
+            # Log the error for debugging
+            logger.error(f"Error generating Apple Music developer token: {str(e)}")
+            # Return a placeholder for development if there's an error
+            if settings.DEBUG:
+                return "DEVELOPER_TOKEN_PLACEHOLDER_DEBUG_MODE"
+            raise
+    
+    @staticmethod
+    def validate_user_token(user_token):
+        """Validate a user token received from the mobile client"""
+        # In Apple Music integration, the mobile app handles user authentication
+        # and provides a user token which we validate here
+        # A basic validation would check if the token is not empty and has a reasonable length
+        if not user_token or len(user_token) < 20:
+            return False
+        
+        # In a production environment, you might make a test API call with the token
+        # to validate it. For now, we'll just do basic checks.
+        return True
+    
+    @staticmethod
+    def save_user_token(user, user_token):
+        """Save the Apple Music user token to the database"""
+        from .models import MusicService  # Import here to avoid circular imports
+        
+        # Apple Music tokens typically expire after a few months
+        # We'll set a 6-month expiry as a reasonable default
+        expires_at = timezone.now() + timedelta(days=180)
+        
+        # Update existing or create new
+        music_service, created = MusicService.objects.update_or_create(
+            user=user,
+            service_type='apple',
+            defaults={
+                'access_token': user_token,
+                # Apple Music doesn't use refresh tokens like OAuth
+                'refresh_token': '',
+                'expires_at': expires_at
+            }
+        )
+        return music_service
+    
+    @staticmethod
+    def make_api_request(music_service, endpoint, method='GET', data=None):
+        """Make authenticated request to Apple Music API"""
+        # Apple Music API requires both a developer token and a user token
+        developer_token = AppleMusicService.get_developer_token()
+        user_token = music_service.access_token
+        
+        headers = {
+            'Authorization': f'Bearer {developer_token}',
+            'Music-User-Token': user_token
+        }
+        
+        url = f"{AppleMusicService.API_BASE_URL}/{endpoint}"
+        
+        if method == 'GET':
+            response = requests.get(url, headers=headers)
+        elif method == 'POST':
+            headers['Content-Type'] = 'application/json'
+            response = requests.post(url, headers=headers, json=data)
+        # Other methods as needed
+        
+        if response.status_code in (200, 201):
+            return response.json()
+        else:
+            return {'error': f'API error: {response.status_code}', 'details': response.text}
+    
+    @staticmethod
+    def search_tracks(music_service, query, limit=20):
+        """Search for tracks"""
+        encoded_query = urllib.parse.quote(query)
+        return AppleMusicService.make_api_request(
+            music_service, 
+            f"catalog/us/search?term={encoded_query}&types=songs&limit={limit}"
+        )
+    
+    @staticmethod
+    def get_recently_played(music_service, limit=50):
+        """Get user's recently played tracks"""
+        return AppleMusicService.make_api_request(
+            music_service, 
+            f"me/recent/played?limit={limit}"
+        )
+    
+    @staticmethod
+    def get_user_playlists(music_service, limit=50, offset=0):
+        """Get user's playlists"""
+        return AppleMusicService.make_api_request(
+            music_service, 
+            f"me/library/playlists?limit={limit}&offset={offset}"
+        )
+    
+    @staticmethod
+    def get_playlist(music_service, playlist_id):
+        """Get a specific playlist"""
+        return AppleMusicService.make_api_request(
+            music_service, 
+            f"me/library/playlists/{playlist_id}"
+        )
+    
+    @staticmethod
+    def get_playlist_tracks(music_service, playlist_id, limit=100, offset=0):
+        """Get tracks from a playlist"""
+        return AppleMusicService.make_api_request(
+            music_service, 
+            f"me/library/playlists/{playlist_id}/tracks?limit={limit}&offset={offset}"
+        )
+    
+    @staticmethod
+    def get_track(music_service, track_id):
+        """Get details for a specific track"""
+        return AppleMusicService.make_api_request(
+            music_service, 
+            f"catalog/us/songs/{track_id}"
+        )
+    
+    @staticmethod
+    def get_saved_tracks(music_service, limit=50, offset=0):
+        """Get user's saved/liked tracks"""
+        return AppleMusicService.make_api_request(
+            music_service, 
+            f"me/library/songs?limit={limit}&offset={offset}"
         ) 

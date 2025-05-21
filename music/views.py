@@ -21,7 +21,7 @@ import string
 import random
 
 from .models import MusicService, RecentTrack
-from .services import MusicServiceAuthMixin, SpotifyService
+from .services import MusicServiceAuthMixin, SpotifyService, AppleMusicService
 from .utils import (
     search_music, 
     get_recently_played_tracks, 
@@ -52,6 +52,19 @@ class SpotifyCallbackResponseSerializer(serializers.Serializer):
     service = serializers.DictField()
 
 
+# Apple Music Serializers
+class AppleMusicTokenSerializer(serializers.Serializer):
+    """Serializer for Apple Music user token"""
+    music_user_token = serializers.CharField(required=True)
+
+
+class AppleMusicResponseSerializer(serializers.Serializer):
+    """Serializer for Apple Music connection response"""
+    message = serializers.CharField()
+    user = serializers.DictField()
+    service = serializers.DictField()
+    
+    
 class MusicServiceSerializer(serializers.Serializer):
     """Serializer for music service information"""
     service_type = serializers.CharField()
@@ -318,6 +331,41 @@ def connection_success(request):
     return render(request, 'music/connection_success.html')
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def apple_music_auth(request):
+    """Handle Apple Music authentication from mobile app"""
+    serializer = AppleMusicTokenSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({'error': 'Invalid request data'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    music_user_token = serializer.validated_data['music_user_token']
+    
+    # Validate the token (in a real implementation, this would verify with Apple)
+    if not AppleMusicService.validate_user_token(music_user_token):
+        return Response({'error': 'Invalid Apple Music token'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Save the token
+    music_service = AppleMusicService.save_user_token(request.user, music_user_token)
+    
+    # Update user profile to indicate Apple Music is connected
+    request.user.apple_music_connected = True
+    request.user.save()
+    
+    # Return success response
+    return Response({
+        'message': 'Apple Music connected successfully',
+        'user': {
+            'username': request.user.username,
+            'apple_music_connected': True
+        },
+        'service': {
+            'service_type': 'apple',
+            'connected_at': music_service.expires_at - timedelta(days=180)  # Approximate connection time
+        }
+    })
+
+
 # Then define ViewSets
 class MusicServiceViewSet(viewsets.ViewSet):
     """
@@ -328,35 +376,39 @@ class MusicServiceViewSet(viewsets.ViewSet):
     
     @action(detail=False, methods=['GET'])
     def connected_services(self, request):
-        """Get user's connected music services"""
+        """Get all connected music services for the user"""
         services = MusicService.objects.filter(user=request.user)
-        data = [{'service_type': service.service_type, 
-                 'connected_at': service.expires_at - timedelta(hours=1),  # Approximate connection time
-                 'is_active': service.expires_at > timezone.now()
-                } for service in services]
+        service_data = []
         
-        # Use the serializer
-        serializer = self.serializer_class(data, many=True)
-        return Response(serializer.data)
+        for service in services:
+            service_data.append({
+                'service_type': service.service_type,
+                'connected_at': service.expires_at - timedelta(days=180),  # Approximate
+                'is_active': service.expires_at > timezone.now()
+            })
+        
+        return Response(service_data)
     
     @action(detail=False, methods=['DELETE'], url_path='disconnect/(?P<service_type>[^/.]+)')
     def disconnect_service(self, request, service_type=None):
         """Disconnect a music service"""
-        if service_type not in dict(MusicService.SERVICE_TYPES):
-            return Response(
-                {"error": "Invalid service type"}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        if service_type not in ['spotify', 'apple', 'soundcloud']:
+            return Response({'error': f'Invalid service type: {service_type}'}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
             service = MusicService.objects.get(user=request.user, service_type=service_type)
             service.delete()
-            return Response({"message": f"{service_type} disconnected successfully"})
+            
+            # Update user model flags
+            if service_type == 'spotify':
+                request.user.spotify_connected = False
+            elif service_type == 'apple':
+                request.user.apple_music_connected = False
+            request.user.save()
+            
+            return Response({'message': f'{service_type} disconnected successfully'})
         except MusicService.DoesNotExist:
-            return Response(
-                {"error": f"No {service_type} connection found"}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return Response({'error': f'No {service_type} service connected'}, status=status.HTTP_404_NOT_FOUND)
 
 
 class SpotifyViewSet(viewsets.ViewSet):
@@ -367,7 +419,7 @@ class SpotifyViewSet(viewsets.ViewSet):
     serializer_class = SpotifyResponseSerializer  # Add serializer class
     
     def _get_spotify_service(self):
-        """Get the user's Spotify service or return None"""
+        """Helper to get the user's Spotify service or raise error"""
         try:
             return MusicService.objects.get(user=self.request.user, service_type='spotify')
         except MusicService.DoesNotExist:
@@ -587,3 +639,158 @@ class MusicTrackViewSet(viewsets.ViewSet):
             )
         
         return Response(result)
+
+
+class AppleMusicViewSet(viewsets.ViewSet):
+    """
+    API endpoints for Apple Music integration
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = SpotifyResponseSerializer  # Reuse the Spotify response serializer for now
+    
+    def _get_apple_music_service(self):
+        """Helper to get the user's Apple Music service or raise error"""
+        try:
+            return MusicService.objects.get(user=self.request.user, service_type='apple')
+        except MusicService.DoesNotExist:
+            return None
+    
+    @action(detail=False, methods=['GET'])
+    def playlists(self, request):
+        """Get user's Apple Music playlists"""
+        music_service = self._get_apple_music_service()
+        if not music_service:
+            return Response({'error': 'Apple Music not connected'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        limit = request.query_params.get('limit', '50')
+        offset = request.query_params.get('offset', '0')
+        
+        result = AppleMusicService.get_user_playlists(music_service, limit, offset)
+        if 'error' in result:
+            return Response({'error': result['error']}, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response(result)
+    
+    @action(detail=True, methods=['GET'], url_path='playlist/(?P<playlist_id>[^/.]+)')
+    def playlist(self, request, playlist_id=None):
+        """Get a specific Apple Music playlist"""
+        music_service = self._get_apple_music_service()
+        if not music_service:
+            return Response({'error': 'Apple Music not connected'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        result = AppleMusicService.get_playlist(music_service, playlist_id)
+        if 'error' in result:
+            return Response({'error': result['error']}, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response(result)
+    
+    @action(detail=True, methods=['GET'], url_path='playlist/(?P<playlist_id>[^/.]+)/tracks')
+    def playlist_tracks(self, request, playlist_id=None):
+        """Get tracks from an Apple Music playlist"""
+        music_service = self._get_apple_music_service()
+        if not music_service:
+            return Response({'error': 'Apple Music not connected'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        limit = request.query_params.get('limit', '100')
+        offset = request.query_params.get('offset', '0')
+        
+        result = AppleMusicService.get_playlist_tracks(music_service, playlist_id, limit, offset)
+        if 'error' in result:
+            return Response({'error': result['error']}, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response(result)
+    
+    @action(detail=True, methods=['GET'], url_path='track/(?P<track_id>[^/.]+)')
+    def track(self, request, track_id=None):
+        """Get details for a specific Apple Music track"""
+        music_service = self._get_apple_music_service()
+        if not music_service:
+            return Response({'error': 'Apple Music not connected'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        result = AppleMusicService.get_track(music_service, track_id)
+        if 'error' in result:
+            return Response({'error': result['error']}, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response(result)
+    
+    @action(detail=False, methods=['GET'])
+    def recently_played(self, request):
+        """Get user's recently played tracks from Apple Music"""
+        music_service = self._get_apple_music_service()
+        if not music_service:
+            return Response({'error': 'Apple Music not connected'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        limit = request.query_params.get('limit', '50')
+        
+        result = AppleMusicService.get_recently_played(music_service, limit)
+        if 'error' in result:
+            return Response({'error': result['error']}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Store recent tracks in our database for analytics/recommendations
+        if 'data' in result:
+            store_recent_tracks_apple(request.user, result['data'])
+        
+        return Response(result)
+    
+    @action(detail=False, methods=['GET'])
+    def search(self, request):
+        """Search for tracks on Apple Music"""
+        music_service = self._get_apple_music_service()
+        if not music_service:
+            return Response({'error': 'Apple Music not connected'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        query = request.query_params.get('q')
+        if not query:
+            return Response({'error': 'Search query is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        limit = request.query_params.get('limit', '20')
+        
+        result = AppleMusicService.search_tracks(music_service, query, limit)
+        if 'error' in result:
+            return Response({'error': result['error']}, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response(result)
+    
+    @action(detail=False, methods=['GET'])
+    def saved_tracks(self, request):
+        """Get user's saved/liked tracks from Apple Music"""
+        music_service = self._get_apple_music_service()
+        if not music_service:
+            return Response({'error': 'Apple Music not connected'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        limit = request.query_params.get('limit', '50')
+        offset = request.query_params.get('offset', '0')
+        
+        result = AppleMusicService.get_saved_tracks(music_service, limit, offset)
+        if 'error' in result:
+            return Response({'error': result['error']}, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response(result)
+
+# Helper function to store recently played tracks from Apple Music
+def store_recent_tracks_apple(user, tracks_data):
+    """Store recently played tracks from Apple Music in our database"""
+    for item in tracks_data:
+        try:
+            # Parse the played_at date - format might vary
+            played_at_str = item['attributes'].get('lastPlayedDate', '')
+            try:
+                played_at = datetime.fromisoformat(played_at_str.replace('Z', '+00:00'))
+            except (ValueError, TypeError):
+                played_at = timezone.now()
+            
+            # Create or update the RecentTrack
+            RecentTrack.objects.update_or_create(
+                user=user,
+                track_id=item['id'],
+                service='apple',
+                defaults={
+                    'title': item['attributes']['name'],
+                    'artist': item['attributes']['artistName'],
+                    'album': item['attributes'].get('albumName', ''),
+                    'album_art': item['attributes'].get('artwork', {}).get('url', '').replace('{w}', '300').replace('{h}', '300'),
+                    'played_at': played_at
+                }
+            )
+        except Exception as e:
+            logger.error(f"Error storing Apple Music recent track: {str(e)}")
