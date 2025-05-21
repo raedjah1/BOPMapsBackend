@@ -23,6 +23,7 @@ from rest_framework_simplejwt.views import TokenVerifyView
 from django.views.generic.base import RedirectView
 from .admin import bopmaps_admin_site
 from .views import IndexView
+from music.views import spotify_callback
 
 # Import admin registrations to ensure they're loaded
 from . import admin_registrations
@@ -30,6 +31,9 @@ from . import admin_registrations
 urlpatterns = [
     # Landing page
     path('', IndexView.as_view(), name='index'),
+    
+    # Spotify Callback URL - to match what's likely in Spotify Developer Dashboard
+    path('callback/', spotify_callback, name='spotify_callback_root'),
     
     # Admin - with custom admin site
     path('admin/', bopmaps_admin_site.urls),
