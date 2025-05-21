@@ -41,6 +41,15 @@ class UserGeoSerializer(GeoFeatureModelSerializer):
         fields = ['id', 'username', 'profile_pic', 'last_active']
 
 
+class UserMiniSerializer(serializers.ModelSerializer):
+    """
+    Minimal serializer for User model, used for nested relationships
+    """
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'profile_pic']
+
+
 class UserRegistrationSerializer(BaseSerializer):
     """
     Serializer for registering new users

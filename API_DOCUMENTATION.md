@@ -634,7 +634,244 @@ BOPMaps uses JWT (JSON Web Tokens) for authentication. All authenticated endpoin
 
 ## Friends
 
-The Friends API endpoints will be implemented in a future update.
+### List Friends
+
+**Endpoint:** `GET /api/friends/`
+
+**Description:** Get a list of all accepted friendships for the current user.
+
+**Response:**
+```json
+[
+  {
+    "id": "friendship_id",
+    "friend": {
+      "id": "user_id",
+      "username": "friend_username",
+      "profile_pic": "profile_image_url"
+    },
+    "created_at": "2023-04-06T12:34:56Z",
+    "updated_at": "2023-04-06T12:34:56Z"
+  }
+]
+```
+
+### Get All Friends
+
+**Endpoint:** `GET /api/friends/all_friends/`
+
+**Description:** Alternative endpoint to get a list of all friends.
+
+**Response:**
+```json
+[
+  {
+    "id": "friendship_id",
+    "friend": {
+      "id": "user_id",
+      "username": "friend_username",
+      "profile_pic": "profile_image_url"
+    },
+    "created_at": "2023-04-06T12:34:56Z",
+    "updated_at": "2023-04-06T12:34:56Z"
+  }
+]
+```
+
+### Unfriend
+
+**Endpoint:** `POST /api/friends/{friendship_id}/unfriend/`
+
+**Description:** Remove a friendship.
+
+**Response:**
+```json
+{
+  "message": "Friend removed successfully"
+}
+```
+
+### List Friend Requests
+
+**Endpoint:** `GET /api/friends/requests/`
+
+**Description:** Get all friend requests for the current user (both sent and received).
+
+**Response:**
+```json
+[
+  {
+    "id": "request_id",
+    "requester": {
+      "id": "user_id",
+      "username": "requester_username",
+      "profile_pic": "profile_image_url"
+    },
+    "recipient": {
+      "id": "user_id",
+      "username": "recipient_username",
+      "profile_pic": "profile_image_url"
+    },
+    "status": "pending",
+    "created_at": "2023-04-06T12:34:56Z",
+    "updated_at": "2023-04-06T12:34:56Z"
+  }
+]
+```
+
+### Create Friend Request
+
+**Endpoint:** `POST /api/friends/requests/`
+
+**Description:** Send a friend request to another user.
+
+**Request:**
+```json
+{
+  "recipient_id": "user_id"
+}
+```
+
+**Response:**
+```json
+{
+  "id": "request_id",
+  "requester": {
+    "id": "user_id",
+    "username": "your_username",
+    "profile_pic": "profile_image_url"
+  },
+  "recipient": {
+    "id": "user_id",
+    "username": "recipient_username",
+    "profile_pic": "profile_image_url"
+  },
+  "status": "pending",
+  "created_at": "2023-04-06T12:34:56Z",
+  "updated_at": "2023-04-06T12:34:56Z"
+}
+```
+
+### Get Sent Friend Requests
+
+**Endpoint:** `GET /api/friends/requests/sent/`
+
+**Description:** Get friend requests sent by the current user.
+
+**Response:**
+```json
+[
+  {
+    "id": "request_id",
+    "requester": {
+      "id": "user_id",
+      "username": "your_username",
+      "profile_pic": "profile_image_url"
+    },
+    "recipient": {
+      "id": "user_id",
+      "username": "recipient_username",
+      "profile_pic": "profile_image_url"
+    },
+    "status": "pending",
+    "created_at": "2023-04-06T12:34:56Z",
+    "updated_at": "2023-04-06T12:34:56Z"
+  }
+]
+```
+
+### Get Received Friend Requests
+
+**Endpoint:** `GET /api/friends/requests/received/`
+
+**Description:** Get friend requests received by the current user.
+
+**Response:**
+```json
+[
+  {
+    "id": "request_id",
+    "requester": {
+      "id": "user_id",
+      "username": "requester_username",
+      "profile_pic": "profile_image_url"
+    },
+    "recipient": {
+      "id": "user_id",
+      "username": "your_username",
+      "profile_pic": "profile_image_url"
+    },
+    "status": "pending",
+    "created_at": "2023-04-06T12:34:56Z",
+    "updated_at": "2023-04-06T12:34:56Z"
+  }
+]
+```
+
+### Accept Friend Request
+
+**Endpoint:** `POST /api/friends/requests/{request_id}/accept/`
+
+**Description:** Accept a pending friend request.
+
+**Response:**
+```json
+{
+  "id": "request_id",
+  "requester": {
+    "id": "user_id",
+    "username": "requester_username",
+    "profile_pic": "profile_image_url"
+  },
+  "recipient": {
+    "id": "user_id",
+    "username": "your_username",
+    "profile_pic": "profile_image_url"
+  },
+  "status": "accepted",
+  "created_at": "2023-04-06T12:34:56Z",
+  "updated_at": "2023-04-06T12:34:56Z"
+}
+```
+
+### Reject Friend Request
+
+**Endpoint:** `POST /api/friends/requests/{request_id}/reject/`
+
+**Description:** Reject a pending friend request.
+
+**Response:**
+```json
+{
+  "id": "request_id",
+  "requester": {
+    "id": "user_id",
+    "username": "requester_username",
+    "profile_pic": "profile_image_url"
+  },
+  "recipient": {
+    "id": "user_id",
+    "username": "your_username",
+    "profile_pic": "profile_image_url"
+  },
+  "status": "rejected",
+  "created_at": "2023-04-06T12:34:56Z",
+  "updated_at": "2023-04-06T12:34:56Z"
+}
+```
+
+### Cancel Friend Request
+
+**Endpoint:** `POST /api/friends/requests/{request_id}/cancel/`
+
+**Description:** Cancel a pending friend request you've sent.
+
+**Response:**
+```json
+{
+  "message": "Friend request cancelled"
+}
+```
 
 ## Music Integration
 
@@ -642,7 +879,260 @@ The Music Integration API endpoints will be implemented in a future update.
 
 ## Gamification
 
-The Gamification API endpoints will be implemented in a future update.
+### List Pin Skins
+
+**Endpoint:** `GET /api/gamification/skins/`
+
+**Description:** Get a list of all available pin skins.
+
+**Response:**
+```json
+[
+  {
+    "id": "skin_id",
+    "name": "Skin Name",
+    "image": "skin_image_url",
+    "description": "Skin description",
+    "is_premium": false,
+    "created_at": "2023-04-06T12:34:56Z",
+    "is_owned": true
+  }
+]
+```
+
+### Get Unlocked Skins
+
+**Endpoint:** `GET /api/gamification/skins/unlocked/`
+
+**Description:** Get only the skins that the current user has unlocked.
+
+**Response:**
+```json
+[
+  {
+    "id": "skin_id",
+    "name": "Skin Name",
+    "image": "skin_image_url",
+    "description": "Skin description",
+    "is_premium": false,
+    "created_at": "2023-04-06T12:34:56Z",
+    "is_owned": true
+  }
+]
+```
+
+### List Achievements
+
+**Endpoint:** `GET /api/gamification/achievements/`
+
+**Description:** Get a list of all available achievements.
+
+**Response:**
+```json
+[
+  {
+    "id": "achievement_id",
+    "name": "Achievement Name",
+    "description": "Achievement description",
+    "icon": "achievement_icon_url",
+    "criteria": {
+      "pins_created": 10,
+      "likes_received": 50
+    },
+    "reward_skin": "skin_id",
+    "reward_skin_details": {
+      "id": "skin_id",
+      "name": "Skin Name",
+      "image": "skin_image_url",
+      "description": "Skin description",
+      "is_premium": true,
+      "created_at": "2023-04-06T12:34:56Z",
+      "is_owned": false
+    },
+    "is_completed": false,
+    "progress": {
+      "pins_created": 5,
+      "likes_received": 20
+    }
+  }
+]
+```
+
+### Get Completed Achievements
+
+**Endpoint:** `GET /api/gamification/achievements/completed/`
+
+**Description:** Get all achievements completed by the current user.
+
+**Response:**
+```json
+[
+  {
+    "id": "achievement_id",
+    "name": "Achievement Name",
+    "description": "Achievement description",
+    "icon": "achievement_icon_url",
+    "criteria": {
+      "pins_created": 10,
+      "likes_received": 50
+    },
+    "reward_skin": "skin_id",
+    "reward_skin_details": {
+      "id": "skin_id",
+      "name": "Skin Name",
+      "image": "skin_image_url",
+      "description": "Skin description",
+      "is_premium": true,
+      "created_at": "2023-04-06T12:34:56Z",
+      "is_owned": true
+    },
+    "is_completed": true,
+    "progress": {
+      "pins_created": 15,
+      "likes_received": 62
+    }
+  }
+]
+```
+
+### Get In-Progress Achievements
+
+**Endpoint:** `GET /api/gamification/achievements/in_progress/`
+
+**Description:** Get achievements that the user has started but not completed.
+
+**Response:**
+```json
+[
+  {
+    "id": "achievement_id",
+    "name": "Achievement Name",
+    "description": "Achievement description",
+    "icon": "achievement_icon_url",
+    "criteria": {
+      "pins_created": 10,
+      "likes_received": 50
+    },
+    "reward_skin": "skin_id",
+    "reward_skin_details": {
+      "id": "skin_id",
+      "name": "Skin Name",
+      "image": "skin_image_url",
+      "description": "Skin description",
+      "is_premium": true,
+      "created_at": "2023-04-06T12:34:56Z",
+      "is_owned": false
+    },
+    "is_completed": false,
+    "progress": {
+      "pins_created": 5,
+      "likes_received": 20
+    }
+  }
+]
+```
+
+### List User Achievements
+
+**Endpoint:** `GET /api/gamification/user-achievements/`
+
+**Description:** Get a list of the current user's achievements and their progress.
+
+**Response:**
+```json
+[
+  {
+    "id": "user_achievement_id",
+    "user": "user_id",
+    "achievement": {
+      "id": "achievement_id",
+      "name": "Achievement Name",
+      "description": "Achievement description",
+      "icon": "achievement_icon_url",
+      "criteria": {
+        "pins_created": 10,
+        "likes_received": 50
+      },
+      "reward_skin": "skin_id",
+      "reward_skin_details": {
+        "id": "skin_id",
+        "name": "Skin Name",
+        "image": "skin_image_url",
+        "description": "Skin description",
+        "is_premium": true,
+        "created_at": "2023-04-06T12:34:56Z",
+        "is_owned": false
+      },
+      "is_completed": false,
+      "progress": {
+        "pins_created": 5,
+        "likes_received": 20
+      }
+    },
+    "completed_at": null,
+    "progress": {
+      "pins_created": 5,
+      "likes_received": 20
+    },
+    "created_at": "2023-04-06T12:34:56Z"
+  }
+]
+```
+
+### Update Achievement Progress
+
+**Endpoint:** `POST /api/gamification/user-achievements/{user_achievement_id}/update_progress/`
+
+**Description:** Update progress for an achievement.
+
+**Request:**
+```json
+{
+  "progress": {
+    "pins_created": 6,
+    "likes_received": 25
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "id": "user_achievement_id",
+  "user": "user_id",
+  "achievement": {
+    "id": "achievement_id",
+    "name": "Achievement Name",
+    "description": "Achievement description",
+    "icon": "achievement_icon_url",
+    "criteria": {
+      "pins_created": 10,
+      "likes_received": 50
+    },
+    "reward_skin": "skin_id",
+    "reward_skin_details": {
+      "id": "skin_id",
+      "name": "Skin Name",
+      "image": "skin_image_url",
+      "description": "Skin description",
+      "is_premium": true,
+      "created_at": "2023-04-06T12:34:56Z",
+      "is_owned": false
+    },
+    "is_completed": false,
+    "progress": {
+      "pins_created": 6,
+      "likes_received": 25
+    }
+  },
+  "completed_at": null,
+  "progress": {
+    "pins_created": 6,
+    "likes_received": 25
+  },
+  "created_at": "2023-04-06T12:34:56Z"
+}
+```
 
 ## Geo Services
 
