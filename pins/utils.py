@@ -26,7 +26,7 @@ def get_nearby_pins(user, lat, lng, radius_meters=1000, limit=50):
     from django.contrib.gis.geos import Point
     
     try:
-        user_location = Point(float(lng), float(lat))
+        user_location = Point(float(lng), float(lat), srid=4326)
         
         # Filter pins
         pins = Pin.objects.filter(
@@ -177,7 +177,7 @@ def get_clustered_pins(user, lat, lng, zoom, radius_meters=2000):
             max_pins = 300
             cluster_distance = 30
         
-        user_location = Point(float(lng), float(lat))
+        user_location = Point(float(lng), float(lat), srid=4326)
         
         # Get pins as usual
         pins = get_nearby_pins(

@@ -67,6 +67,7 @@ class FriendRequestViewSet(BaseModelViewSet):
     """
     serializer_class = FriendRequestSerializer
     permission_classes = [permissions.IsAuthenticated]
+    http_method_names = ['get', 'post', 'head', 'options', 'delete']
     
     def get_queryset(self):
         """

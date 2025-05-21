@@ -15,6 +15,7 @@ from datetime import timedelta
 from pathlib import Path
 from decouple import config
 import dj_database_url
+import sys # Ensure sys is imported at the top
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -31,6 +32,9 @@ SECRET_KEY = config('SECRET_KEY', default='django-insecure-replace-this-in-produ
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
+
+# Determine if running tests
+IS_TESTING = 'test' in sys.argv
 
 ALLOWED_HOSTS = ['*']  # Allow all hosts for demo purposes
 
@@ -56,7 +60,6 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'drf_yasg',
     'django_redis',
-    'debug_toolbar',
     'django_celery_beat',
     'storages',
     
@@ -68,6 +71,9 @@ INSTALLED_APPS = [
     'gamification',
     'geo',
 ]
+
+if DEBUG and not IS_TESTING:
+    INSTALLED_APPS.append('debug_toolbar')
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -83,8 +89,10 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'bopmaps.middleware.RequestLogMiddleware',
     'bopmaps.middleware.UpdateLastActivityMiddleware',
-    'debug_toolbar.middleware.DebugToolbarMiddleware',
 ]
+
+if DEBUG and not IS_TESTING:
+    MIDDLEWARE.append('debug_toolbar.middleware.DebugToolbarMiddleware')
 
 ROOT_URLCONF = 'bopmaps.urls'
 
@@ -529,3 +537,6 @@ CSRF_COOKIE_SAMESITE = 'Lax'
 CSRF_EXEMPT_URLS = [
     r'^api/geo/tiles/.*$',  # Tile requests
 ]
+
+# A configuration variable to detect if we're in test mode
+TESTING = 'test' in sys.argv

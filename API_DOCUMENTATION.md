@@ -875,7 +875,410 @@ BOPMaps uses JWT (JSON Web Tokens) for authentication. All authenticated endpoin
 
 ## Music Integration
 
-The Music Integration API endpoints will be implemented in a future update.
+This section details endpoints for connecting and interacting with music services like Spotify, Apple Music, and SoundCloud.
+
+### Connect Services (Frontend Route)
+
+**Note:** This is primarily a frontend concern, directing the user to the respective OAuth flows.
+
+**Route:** `/music/connect/` (Example, actual route might vary)
+
+**Description:** A page or section in the frontend where users can initiate the connection process for various music services.
+
+### Spotify Authentication (Mobile)
+
+**Endpoint:** `GET /api/music/spotify/auth/mobile/`
+
+**Description:** Initiates the Spotify OAuth flow specifically for mobile applications. Returns an authentication URL.
+
+**Response:**
+```json
+{
+  "auth_url": "spotify_authentication_url"
+}
+```
+
+### Spotify Callback Handler (Mobile)
+
+**Endpoint:** `POST /api/music/spotify/callback/handler/`
+
+**Description:** Handles the OAuth callback from Spotify for mobile applications. Exchanges the authorization code for access and refresh tokens and links the Spotify account to the BOPMaps user.
+
+**Request:**
+```json
+{
+  "code": "spotify_authorization_code"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Spotify connected successfully",
+  "user": {
+    "id": "user_id",
+    "username": "your_username",
+    "spotify_connected": true
+  },
+  "service": {
+    "service_type": "spotify",
+    "expires_at": "datetime_string"
+  }
+}
+```
+
+### List Connected Music Services
+
+**Endpoint:** `GET /api/music/services/connected_services/`
+
+**Description:** Retrieves a list of music services the current user has connected to their BOPMaps account.
+
+**Response:**
+```json
+[
+  {
+    "service_type": "spotify",
+    "connected_at": "datetime_string",
+    "is_active": true
+  }
+  // ... other connected services
+]
+```
+
+### Disconnect Music Service
+
+**Endpoint:** `DELETE /api/music/services/disconnect/{service_type}/`
+
+**Description:** Disconnects a specified music service (e.g., `spotify`, `apple`, `soundcloud`) from the user's BOPMaps account.
+
+**Response:**
+```json
+{
+  "message": "{service_type} disconnected successfully"
+}
+```
+**Error Response (404 Not Found):**
+```json
+{
+  "error": "No {service_type} connection found"
+}
+```
+
+### Spotify: Get User Playlists
+
+**Endpoint:** `GET /api/music/spotify/playlists/`
+
+**Description:** Retrieves the current user's Spotify playlists.
+
+**Query Parameters:**
+- `limit`: (Optional) Number of playlists to return (default: 50).
+- `offset`: (Optional) The index of the first playlist to return.
+
+**Response:** (Spotify API pass-through)
+```json
+{
+  // Spotify playlist data structure
+  "items": [
+    {
+      "id": "playlist_id",
+      "name": "Playlist Name",
+      // ... other playlist fields
+    }
+  ]
+}
+```
+
+### Spotify: Get Specific Playlist Details
+
+**Endpoint:** `GET /api/music/spotify/playlist/{playlist_id}/`
+
+**Description:** Retrieves details for a specific Spotify playlist.
+
+**Response:** (Spotify API pass-through)
+```json
+{
+  // Spotify playlist data structure for a single playlist
+  "id": "playlist_id",
+  "name": "Playlist Name",
+  // ... other playlist fields
+}
+```
+
+### Spotify: Get Playlist Tracks
+
+**Endpoint:** `GET /api/music/spotify/playlist/{playlist_id}/tracks/`
+
+**Description:** Retrieves tracks from a specific Spotify playlist.
+
+**Query Parameters:**
+- `limit`: (Optional) Number of tracks to return (default: 100).
+- `offset`: (Optional) The index of the first track to return.
+
+**Response:** (Spotify API pass-through)
+```json
+{
+  // Spotify playlist tracks data structure
+  "items": [
+    {
+      "track": {
+        "id": "track_id",
+        "name": "Track Name",
+        // ... other track fields
+      }
+    }
+  ]
+}
+```
+
+### Spotify: Get Track Details
+
+**Endpoint:** `GET /api/music/spotify/track/{track_id}/`
+
+**Description:** Retrieves details for a specific Spotify track.
+
+**Response:** (Spotify API pass-through)
+```json
+{
+  // Spotify track data structure
+  "id": "track_id",
+  "name": "Track Name",
+  // ... other track fields
+}
+```
+
+### Spotify: Get Recently Played Tracks
+
+**Endpoint:** `GET /api/music/spotify/recently_played/`
+
+**Description:** Retrieves the current user's recently played tracks on Spotify.
+
+**Query Parameters:**
+- `limit`: (Optional) Number of tracks to return (default: 50).
+
+**Response:** (Spotify API pass-through)
+```json
+{
+  // Spotify recently played tracks data structure
+  "items": [
+    {
+      "track": {
+        "id": "track_id",
+        "name": "Track Name",
+        // ... other track fields
+      },
+      "played_at": "datetime_string"
+    }
+  ]
+}
+```
+
+### Spotify: Search Tracks
+
+**Endpoint:** `GET /api/music/spotify/search/`
+
+**Description:** Searches for tracks on Spotify.
+
+**Query Parameters:**
+- `q`: Search query (required).
+- `limit`: (Optional) Number of tracks to return (default: 20).
+
+**Response:** (Spotify API pass-through)
+```json
+{
+  "tracks": {
+    "items": [
+      {
+        "id": "track_id",
+        "name": "Track Name",
+        // ... other track fields
+      }
+    ]
+  }
+}
+```
+
+### Spotify: Get User's Saved Tracks
+
+**Endpoint:** `GET /api/music/spotify/saved_tracks/`
+
+**Description:** Retrieves the current user's saved (liked) tracks on Spotify.
+
+**Query Parameters:**
+- `limit`: (Optional) Number of tracks to return (default: 50).
+- `offset`: (Optional) The index of the first track to return.
+
+**Response:** (Spotify API pass-through)
+```json
+{
+  // Spotify saved tracks data structure
+  "items": [
+    {
+      "track": {
+        "id": "track_id",
+        "name": "Track Name",
+        // ... other track fields
+      }
+    }
+  ]
+}
+```
+
+### Music Tracks: Search Across Services
+
+**Endpoint:** `GET /api/music/tracks/search/`
+
+**Description:** Searches for music tracks across all connected services or a specific service.
+
+**Query Parameters:**
+- `q`: Search query (required).
+- `service`: (Optional) Specify a service to search (e.g., `spotify`). If not provided, searches across connected services.
+- `limit`: (Optional) Number of results per service (default: 10).
+
+**Response:**
+```json
+{
+  "spotify": [ // Results from Spotify
+    {
+      "id": "track_id",
+      "title": "Track Title",
+      "artist": "Artist Name",
+      "album": "Album Name",
+      "album_art": "image_url",
+      "url": "track_url_on_spotify",
+      "service": "spotify",
+      "preview_url": "preview_audio_url" // Optional
+    }
+  ],
+  "apple": [], // Results from Apple Music (if connected and implemented)
+  "soundcloud": [] // Results from SoundCloud (if connected and implemented)
+}
+```
+
+### Music Tracks: Get Recently Played Tracks
+
+**Endpoint:** `GET /api/music/tracks/recently_played/`
+
+**Description:** Retrieves recently played tracks from connected services.
+
+**Query Parameters:**
+- `service`: (Optional) Specify a service (e.g., `spotify`). If not provided, attempts to fetch from all connected.
+- `limit`: (Optional) Number of results per service (default: 10).
+
+**Response:** (Similar structure to search, with `played_at` field)
+```json
+{
+  "spotify": [
+    {
+      "id": "track_id",
+      "title": "Track Title",
+      "artist": "Artist Name",
+      "album": "Album Name",
+      "album_art": "image_url",
+      "url": "track_url_on_spotify",
+      "service": "spotify",
+      "played_at": "datetime_string",
+      "preview_url": "preview_audio_url" // Optional
+    }
+  ]
+  // ... other services
+}
+```
+
+### Music Tracks: Get User's Saved Tracks
+
+**Endpoint:** `GET /api/music/tracks/saved_tracks/`
+
+**Description:** Retrieves the user's saved/liked tracks from connected services.
+
+**Query Parameters:**
+- `service`: (Optional) Specify a service (e.g., `spotify`).
+- `limit`: (Optional) Number of results per service (default: 50).
+- `offset`: (Optional) Offset for pagination per service (default: 0).
+
+
+**Response:** (Similar structure to search)
+```json
+{
+  "spotify": [
+    {
+      "id": "track_id",
+      "title": "Track Title",
+      // ... other track fields
+    }
+  ]
+  // ... other services
+}
+```
+
+### Music Tracks: Get User Playlists
+
+**Endpoint:** `GET /api/music/tracks/playlists/`
+
+**Description:** Retrieves the user's playlists from connected services.
+
+**Query Parameters:**
+- `service`: (Optional) Specify a service (e.g., `spotify`).
+- `limit`: (Optional) Number of playlists per service (default: 20).
+
+**Response:** (Aggregated from services, structure may vary per service section)
+```json
+{
+  "spotify": [
+    {
+      "id": "playlist_id",
+      "name": "Playlist Name",
+      // ... other playlist fields from Spotify
+    }
+  ]
+  // ... other services
+}
+```
+
+### Music Tracks: Get Tracks from a Specific Playlist
+
+**Endpoint:** `GET /api/music/tracks/playlist/{service}/{playlist_id}/`
+
+**Description:** Retrieves tracks from a specific playlist of a given service.
+
+**Query Parameters:**
+- `limit`: (Optional) Number of tracks to return (default: 50).
+
+**Response:** (Structure may vary per service)
+```json
+// Example for Spotify
+{
+  "items": [
+    {
+      "track": {
+        "id": "track_id",
+        "title": "Track Title",
+        // ... other track fields
+      }
+    }
+  ]
+}
+```
+
+### Music Tracks: Get Track Details
+
+**Endpoint:** `GET /api/music/tracks/track/{service}/{track_id}/`
+
+**Description:** Retrieves detailed information for a specific track from a given service.
+
+**Response:** (Structure may vary per service)
+```json
+// Example for Spotify
+{
+  "id": "track_id",
+  "title": "Track Title",
+  "artist": "Artist Name",
+  "album": "Album Name",
+  "album_art": "image_url",
+  "url": "track_url",
+  "service": "spotify",
+  "preview_url": "preview_audio_url" // Optional
+}
+```
 
 ## Gamification
 
@@ -1136,7 +1539,237 @@ The Music Integration API endpoints will be implemented in a future update.
 
 ## Geo Services
 
-The Geo Services API endpoints will be implemented in a future update.
+This section covers endpoints related to geographical data, location services, and map features.
+
+### List Trending Areas
+
+**Endpoint:** `GET /api/geo/trending_areas/`
+
+**Description:** Retrieves a list of trending areas based on pin activity.
+
+**Query Parameters:**
+- `latitude`: (Optional) User's current latitude to find nearby trending areas.
+- `longitude`: (Optional) User's current longitude.
+- `radius`: (Optional) Search radius in meters (default: 5000m) when latitude/longitude are provided.
+
+**Response:**
+```json
+[
+  {
+    "id": "area_id",
+    "name": "Trending Area Name",
+    "center": {
+      "type": "Point",
+      "coordinates": [longitude, latitude]
+    },
+    "radius": 800, // meters
+    "pin_count": 150,
+    "top_genres": ["Electronic", "Indie"],
+    "last_updated": "datetime_string",
+    "distance": 1234.5 // meters, if user location provided
+  }
+]
+```
+
+### Get Trending Areas for Map Visualization (Heatmap)
+
+**Endpoint:** `GET /api/geo/trending_areas/map_visualization/`
+
+**Description:** Retrieves trending areas formatted for heatmap display on the map.
+
+**Query Parameters:**
+- `latitude`: (Optional) Current map center latitude.
+- `longitude`: (Optional) Current map center longitude.
+- `zoom`: (Optional) Current map zoom level (default: 10).
+
+**Response:**
+```json
+{
+  "areas": [ // Same as List Trending Areas
+    {
+      "id": "area_id",
+      "name": "Trending Area Name",
+      // ... other fields
+    }
+  ],
+  "heatmap_data": [
+    // Format: [latitude, longitude, intensity (0.0 to 1.0)]
+    [40.7128, -74.0060, 0.8],
+    [34.0522, -118.2437, 0.6]
+  ],
+  "visualization_params": {
+    "radius": 25,
+    "blur": 15,
+    "max": 1.0,
+    "gradient": {
+      "0.4": "blue",
+      "0.6": "cyan",
+      "0.7": "lime",
+      "0.8": "yellow",
+      "1.0": "red"
+    }
+  }
+}
+```
+
+### List User Location History
+
+**Endpoint:** `GET /api/geo/user_locations/`
+
+**Description:** Retrieves the authenticated user's location history (primarily for user reference or potential future features).
+
+**Response:**
+```json
+[
+  {
+    "id": "location_log_id",
+    "user": "user_id", // Should match authenticated user
+    "location": {
+      "type": "Point",
+      "coordinates": [longitude, latitude]
+    },
+    "timestamp": "datetime_string"
+  }
+]
+```
+
+### Get Building Data
+
+**Endpoint:** `GET /api/geo/buildings/`
+
+**Description:** Retrieves building footprint data for map display within a given bounding box and zoom level. Data is sourced from OpenStreetMap and simplified based on zoom.
+
+**Query Parameters:**
+- `north`: North boundary latitude (required).
+- `south`: South boundary latitude (required).
+- `east`: East boundary longitude (required).
+- `west`: West boundary longitude (required).
+- `zoom`: Current map zoom level (required, affects detail).
+
+**Response:**
+```json
+[
+  {
+    "id": "building_osm_id",
+    "osm_id": 12345678,
+    "name": "Empire State Building", // Optional
+    "height": 381.0, // Optional, in meters
+    "levels": 102, // Optional
+    "building_type": "office", // Optional
+    "geometry": { // GeoJSON Geometry Object (Polygon or MultiPolygon)
+      "type": "Polygon",
+      "coordinates": [[[lon, lat], [lon, lat], ...]]
+    },
+    "last_updated": "datetime_string"
+  }
+]
+```
+
+### Get Road Data
+
+**Endpoint:** `GET /api/geo/roads/`
+
+**Description:** Retrieves road network data for map display within a given bounding box and zoom level.
+
+**Query Parameters:** (Same as Get Building Data)
+- `north`, `south`, `east`, `west`, `zoom` (all required).
+
+**Response:**
+```json
+[
+  {
+    "id": "road_osm_id",
+    "osm_id": 87654321,
+    "name": "Broadway", // Optional
+    "road_type": "primary", // e.g., motorway, primary, secondary, residential
+    "width": 15.0, // Optional, in meters
+    "lanes": 4, // Optional
+    "geometry": { // GeoJSON Geometry Object (LineString or MultiLineString)
+      "type": "LineString",
+      "coordinates": [[lon, lat], [lon, lat], ...]
+    },
+    "last_updated": "datetime_string"
+  }
+]
+```
+
+### Get Park Data
+
+**Endpoint:** `GET /api/geo/parks/`
+
+**Description:** Retrieves park and leisure area data for map display within a given bounding box and zoom level.
+
+**Query Parameters:** (Same as Get Building Data)
+- `north`, `south`, `east`, `west`, `zoom` (all required).
+
+**Response:**
+```json
+[
+  {
+    "id": "park_osm_id",
+    "osm_id": 11223344,
+    "name": "Central Park", // Optional
+    "park_type": "park", // e.g., park, garden, nature_reserve
+    "geometry": { // GeoJSON Geometry Object (Polygon or MultiPolygon)
+      "type": "Polygon",
+      "coordinates": [[[lon, lat], [lon, lat], ...]]
+    },
+    "last_updated": "datetime_string"
+  }
+]
+```
+
+### Get/Update User Map Settings
+
+**Endpoint:** `GET /api/geo/map_settings/current/` or `GET /api/geo/map_settings/{user_id}/` (if accessing specific user's settings as admin)
+**Endpoint:** `PUT /api/geo/map_settings/{user_id}/` or `PATCH /api/geo/map_settings/{user_id}/` (for updates)
+**Endpoint:** `POST /api/geo/map_settings/` (for initial creation if using standard ModelViewSet creation, though `current` often handles this implicitly on GET)
+
+
+**Description:** Retrieves or updates the authenticated user's map display preferences. If no settings exist for the user on GET, default settings are created and returned.
+
+**Request (PUT/PATCH):**
+```json
+{
+  "show_feature_info": true,
+  "use_3d_buildings": false,
+  "default_latitude": 34.0522,
+  "default_longitude": -118.2437,
+  "default_zoom": 14.0,
+  "max_cache_size_mb": 250,
+  "theme": "dark"
+}
+```
+
+**Response (GET or after PUT/PATCH):**
+```json
+{
+  "id": "settings_id",
+  "user": "user_id",
+  "show_feature_info": true,
+  "use_3d_buildings": false,
+  "default_latitude": 34.0522,
+  "default_longitude": -118.2437,
+  "default_zoom": 14.0,
+  "max_cache_size_mb": 250,
+  "theme": "dark",
+  "updated_at": "datetime_string"
+}
+```
+
+### OSM Tile Proxy
+
+**Endpoint:** `GET /api/geo/tiles/{z}/{x}/{y}.png`
+
+**Description:** Proxies tile requests to OpenStreetMap's tile server, with BOPMaps server-side caching. This helps comply with OSM's tile usage policy and improves performance.
+
+**Response:** PNG image data for the requested map tile.
+- `200 OK`: Tile image.
+- `304 Not Modified`: If client's cached tile (via ETag) is still valid.
+- `400 Bad Request`: Invalid tile coordinates or zoom level.
+- `404 Not Found`: Tile does not exist on OSM server.
+- `429 Too Many Requests`: If BOPMaps server hits OSM rate limits (should be rare with caching).
+- `504 Gateway Timeout`: If OSM server is slow to respond.
 
 ---
 

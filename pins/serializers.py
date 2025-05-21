@@ -6,6 +6,7 @@ from gamification.serializers import PinSkinSerializer
 from bopmaps.serializers import BaseSerializer, TimeStampedModelSerializer
 from bopmaps.validators import MusicURLValidator
 from django.utils import timezone
+from django.contrib.gis.geos import Point
 import logging
 
 logger = logging.getLogger('bopmaps')
@@ -34,6 +35,20 @@ class PinSerializer(TimeStampedModelSerializer):
             'track_url': {'validators': [MusicURLValidator()]},
             'expiration_date': {'required': False, 'allow_null': True},
         }
+    
+    def to_representation(self, instance):
+        """Override to handle potential None values safely"""
+        try:
+            return super().to_representation(instance)
+        except AttributeError as e:
+            logger.error(f"Error in PinSerializer.to_representation: {str(e)}")
+            # Create a representation with minimal data to avoid breaking the API
+            data = {
+                'id': instance.id if hasattr(instance, 'id') else None,
+                'title': instance.title if hasattr(instance, 'title') else 'Unknown pin',
+                'error': 'Failed to fully serialize pin due to missing data'
+            }
+            return data
     
     def get_interaction_count(self, obj):
         """Get count of different interactions for this pin"""
@@ -87,7 +102,18 @@ class PinSerializer(TimeStampedModelSerializer):
     def create(self, validated_data):
         """Ensure owner is set to request user when creating a pin"""
         validated_data['owner'] = self.context.get('request').user
-        
+        location_data = validated_data.pop('location', None)
+        if location_data and isinstance(location_data, dict):
+            coordinates = location_data.get('coordinates')
+            if coordinates and len(coordinates) == 2:
+                validated_data['location'] = Point(coordinates[0], coordinates[1], srid=4326)
+            else:
+                raise serializers.ValidationError({"location": "Invalid coordinates."}) 
+        elif location_data: # If it's already a Point object or other, pass through or handle as error
+             validated_data['location'] = location_data # Assuming it might be a Point already from some contexts
+        else: # Location is required
+            raise serializers.ValidationError({"location": "Location is required."})
+
         try:
             instance = super().create(validated_data)
             logger.info(f"Pin created by {instance.owner.username}: {instance.title}")
@@ -95,6 +121,19 @@ class PinSerializer(TimeStampedModelSerializer):
         except Exception as e:
             logger.error(f"Error creating pin: {str(e)}")
             raise
+
+    def update(self, instance, validated_data):
+        location_data = validated_data.pop('location', None)
+        if location_data and isinstance(location_data, dict):
+            coordinates = location_data.get('coordinates')
+            if coordinates and len(coordinates) == 2:
+                instance.location = Point(coordinates[0], coordinates[1], srid=4326)
+            else:
+                raise serializers.ValidationError({"location": "Invalid coordinates."}) 
+        elif location_data: # If it's already a Point object or other, pass through or handle as error
+            instance.location = location_data # Assuming it might be a Point already from some contexts
+
+        return super().update(instance, validated_data)
 
 
 class PinGeoSerializer(GeoFeatureModelSerializer):
@@ -116,6 +155,23 @@ class PinGeoSerializer(GeoFeatureModelSerializer):
             'collect_count', 'created_at', 'distance', 'has_expired',
             'aura_radius'
         ]
+    
+    def to_representation(self, instance):
+        """Override to handle potential None values safely"""
+        try:
+            return super().to_representation(instance)
+        except AttributeError as e:
+            logger.error(f"Error in PinGeoSerializer.to_representation: {str(e)}")
+            # Create a minimal GeoJSON feature to avoid breaking the API
+            return {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [0, 0]},
+                "properties": {
+                    "id": instance.id if hasattr(instance, 'id') else None,
+                    "title": instance.title if hasattr(instance, 'title') else "Unknown pin",
+                    "error": "Failed to fully serialize pin"
+                }
+            }
     
     def get_like_count(self, obj):
         return obj.interactions.filter(interaction_type='like').count()
@@ -147,6 +203,19 @@ class PinInteractionSerializer(BaseSerializer):
         model = PinInteraction
         fields = ['id', 'user', 'pin', 'interaction_type', 'created_at']
         read_only_fields = ['id', 'created_at', 'user']
+    
+    def to_representation(self, instance):
+        """Override to handle potential None values safely"""
+        try:
+            return super().to_representation(instance)
+        except AttributeError as e:
+            logger.error(f"Error in PinInteractionSerializer.to_representation: {str(e)}")
+            # Create a minimal representation to avoid breaking the API
+            return {
+                'id': instance.id if hasattr(instance, 'id') else None,
+                'interaction_type': instance.interaction_type if hasattr(instance, 'interaction_type') else 'unknown',
+                'error': 'Failed to fully serialize interaction'
+            }
     
     def create(self, validated_data):
         """Ensure user is set to request user when creating an interaction"""

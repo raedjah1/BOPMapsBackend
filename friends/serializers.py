@@ -43,3 +43,20 @@ class FriendRequestSerializer(serializers.ModelSerializer):
         model = Friend
         fields = ['id', 'requester', 'recipient', 'recipient_id', 'status', 'created_at', 'updated_at']
         read_only_fields = ['id', 'requester', 'created_at', 'updated_at'] 
+
+    def validate(self, attrs):
+        request_user = self.context['request'].user
+        recipient = attrs.get('recipient')
+
+        if recipient == request_user:
+            raise serializers.ValidationError("You cannot send a friend request to yourself.")
+
+        # Check for existing pending or accepted requests in either direction
+        if Friend.objects.filter(
+            requester=request_user, recipient=recipient, status__in=['pending', 'accepted']
+        ).exists() or Friend.objects.filter(
+            requester=recipient, recipient=request_user, status__in=['pending', 'accepted']
+        ).exists():
+            raise serializers.ValidationError("A friend request already exists or you are already friends.")
+            
+        return attrs 

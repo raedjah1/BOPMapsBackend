@@ -70,9 +70,8 @@ class PinSkinViewSet(BaseReadOnlyViewSet):
         
         try:
             # Set this skin as the user's current skin
-            # Assuming User model has a 'current_skin' field or similar
-            user.current_skin = skin
-            user.save(update_fields=['current_skin'])
+            user.current_pin_skin = skin
+            user.save(update_fields=['current_pin_skin'])
             
             return Response(
                 {"success": True, "message": f"Equipped skin: {skin.name}"},

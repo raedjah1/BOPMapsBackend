@@ -18,6 +18,8 @@ router.register(r'services', MusicServiceViewSet, basename='services')
 router.register(r'spotify', SpotifyViewSet, basename='spotify')
 router.register(r'tracks', MusicTrackViewSet, basename='tracks')
 
+app_name = 'music'
+
 urlpatterns = [
     # Main view
     path('connect/', connect_services, name='connect-services'),
@@ -32,5 +34,5 @@ urlpatterns = [
     path('auth/callback/', callback_handler, name='callback-handler'),
     
     # API endpoints
-    path('api/', include(router.urls)),
+    path('', include(router.urls)),
 ] 

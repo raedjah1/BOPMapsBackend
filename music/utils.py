@@ -2,7 +2,8 @@
 Utility functions for music service integration
 """
 from .models import MusicService
-from .services import SpotifyService, AppleMusicService, SoundCloudService
+# from .services import SpotifyService, AppleMusicService, SoundCloudService
+from .services import SpotifyService # Keep SpotifyService
 import logging
 
 logger = logging.getLogger('bopmaps')
@@ -22,10 +23,10 @@ def get_service_class(service_type):
     """
     if service_type == 'spotify':
         return SpotifyService
-    elif service_type == 'apple':
-        return AppleMusicService
-    elif service_type == 'soundcloud':
-        return SoundCloudService
+    # elif service_type == 'apple':
+    #     return AppleMusicService
+    # elif service_type == 'soundcloud':
+    #     return SoundCloudService
     else:
         raise ValueError(f"Unsupported service type: {service_type}")
 
@@ -70,34 +71,34 @@ def search_music(user, query, service_type=None, limit=10):
                     for track in service_results['tracks']['items']
                 ]
             
-            elif service_type == 'apple' and 'error' not in service_results and 'results' in service_results:
-                if 'songs' in service_results['results']:
-                    results['apple'] = [
-                        {
-                            'id': track['id'],
-                            'title': track['attributes']['name'],
-                            'artist': track['attributes']['artistName'],
-                            'album': track['attributes']['albumName'],
-                            'album_art': track['attributes']['artwork']['url'].replace('{w}', '300').replace('{h}', '300'),
-                            'url': track['attributes'].get('url', ''),
-                            'service': 'apple'
-                        }
-                        for track in service_results['results']['songs']['data']
-                    ]
+            # elif service_type == 'apple' and 'error' not in service_results and 'results' in service_results:
+            #     if 'songs' in service_results['results']:
+            #         results['apple'] = [
+            #             {
+            #                 'id': track['id'],
+            #                 'title': track['attributes']['name'],
+            #                 'artist': track['attributes']['artistName'],
+            #                 'album': track['attributes']['albumName'],
+            #                 'album_art': track['attributes']['artwork']['url'].replace('{w}', '300').replace('{h}', '300'),
+            #                 'url': track['attributes'].get('url', ''),
+            #                 'service': 'apple'
+            #             }
+            #             for track in service_results['results']['songs']['data']
+            #         ]
             
-            elif service_type == 'soundcloud' and 'error' not in service_results:
-                results['soundcloud'] = [
-                    {
-                        'id': str(track['id']),
-                        'title': track['title'],
-                        'artist': track['user']['username'],
-                        'album': track.get('release_title', ''),
-                        'album_art': track['artwork_url'].replace('-large', '-t500x500') if track.get('artwork_url') else None,
-                        'url': track['permalink_url'],
-                        'service': 'soundcloud'
-                    }
-                    for track in service_results
-                ]
+            # elif service_type == 'soundcloud' and 'error' not in service_results:
+            #     results['soundcloud'] = [
+            #         {
+            #             'id': str(track['id']),
+            #             'title': track['title'],
+            #             'artist': track['user']['username'],
+            #             'album': track.get('release_title', ''),
+            #             'album_art': track['artwork_url'].replace('-large', '-t500x500') if track.get('artwork_url') else None,
+            #             'url': track['permalink_url'],
+            #             'service': 'soundcloud'
+            #         }
+            #         for track in service_results
+            #     ]
         except Exception as e:
             logger.error(f"Error searching {service_type}: {str(e)}")
     
@@ -144,35 +145,35 @@ def get_recently_played_tracks(user, service_type=None, limit=10):
                     for item in service_results['items']
                 ]
             
-            elif service_type == 'apple' and 'error' not in service_results and 'data' in service_results:
-                results['apple'] = [
-                    {
-                        'id': item['id'],
-                        'title': item['attributes']['name'],
-                        'artist': item['attributes']['artistName'],
-                        'album': item['attributes']['albumName'],
-                        'album_art': item['attributes']['artwork']['url'].replace('{w}', '300').replace('{h}', '300'),
-                        'url': item['attributes'].get('url', ''),
-                        'played_at': item['attributes'].get('lastPlayedDate', ''),
-                        'service': 'apple'
-                    }
-                    for item in service_results['data']
-                ]
+            # elif service_type == 'apple' and 'error' not in service_results and 'data' in service_results:
+            #     results['apple'] = [
+            #         {
+            #             'id': item['id'],
+            #             'title': item['attributes']['name'],
+            #             'artist': item['attributes']['artistName'],
+            #             'album': item['attributes']['albumName'],
+            #             'album_art': item['attributes']['artwork']['url'].replace('{w}', '300').replace('{h}', '300'),
+            #             'url': item['attributes'].get('url', ''),
+            #             'played_at': item['attributes'].get('lastPlayedDate', ''),
+            #             'service': 'apple'
+            #         }
+            #         for item in service_results['data']
+            #     ]
             
-            elif service_type == 'soundcloud' and 'error' not in service_results and 'collection' in service_results:
-                results['soundcloud'] = [
-                    {
-                        'id': str(item['track']['id']),
-                        'title': item['track']['title'],
-                        'artist': item['track']['user']['username'],
-                        'album': item['track'].get('release_title', ''),
-                        'album_art': item['track'].get('artwork_url', '').replace('-large', '-t500x500') if item['track'].get('artwork_url') else None,
-                        'url': item['track']['permalink_url'],
-                        'played_at': item.get('played_at', ''),
-                        'service': 'soundcloud'
-                    }
-                    for item in service_results['collection']
-                ]
+            # elif service_type == 'soundcloud' and 'error' not in service_results and 'collection' in service_results:
+            #     results['soundcloud'] = [
+            #         {
+            #             'id': str(item['track']['id']),
+            #             'title': item['track']['title'],
+            #             'artist': item['track']['user']['username'],
+            #             'album': item['track'].get('release_title', ''),
+            #             'album_art': item['track'].get('artwork_url', '').replace('-large', '-t500x500') if item['track'].get('artwork_url') else None,
+            #             'url': item['track']['permalink_url'],
+            #             'played_at': item.get('played_at', ''),
+            #             'service': 'soundcloud'
+            #         }
+            #         for item in service_results['collection']
+            #     ]
         except Exception as e:
             logger.error(f"Error getting recently played for {service_type}: {str(e)}")
     
@@ -217,31 +218,31 @@ def get_user_playlists(user, service_type=None, limit=20):
                     for playlist in service_results['items']
                 ]
             
-            elif service_type == 'apple' and 'error' not in service_results and 'data' in service_results:
-                results['apple'] = [
-                    {
-                        'id': playlist['id'],
-                        'name': playlist['attributes']['name'],
-                        'image': playlist['attributes']['artwork']['url'].replace('{w}', '300').replace('{h}', '300') if 'artwork' in playlist['attributes'] else None,
-                        'track_count': playlist['attributes'].get('trackCount', 0),
-                        'url': playlist['attributes'].get('url', ''),
-                        'service': 'apple'
-                    }
-                    for playlist in service_results['data']
-                ]
+            # elif service_type == 'apple' and 'error' not in service_results and 'data' in service_results:
+            #     results['apple'] = [
+            #         {
+            #             'id': playlist['id'],
+            #             'name': playlist['attributes']['name'],
+            #             'image': playlist['attributes']['artwork']['url'].replace('{w}', '300').replace('{h}', '300') if 'artwork' in playlist['attributes'] else None,
+            #             'track_count': playlist['attributes'].get('trackCount', 0),
+            #             'url': playlist['attributes'].get('url', ''),
+            #             'service': 'apple'
+            #         }
+            #         for playlist in service_results['data']
+            #     ]
             
-            elif service_type == 'soundcloud' and 'error' not in service_results:
-                results['soundcloud'] = [
-                    {
-                        'id': str(playlist['id']),
-                        'name': playlist['title'],
-                        'image': playlist.get('artwork_url', '').replace('-large', '-t500x500') if playlist.get('artwork_url') else None,
-                        'track_count': playlist.get('track_count', 0),
-                        'url': playlist['permalink_url'],
-                        'service': 'soundcloud'
-                    }
-                    for playlist in service_results
-                ]
+            # elif service_type == 'soundcloud' and 'error' not in service_results:
+            #     results['soundcloud'] = [
+            #         {
+            #             'id': str(playlist['id']),
+            #             'name': playlist['title'],
+            #             'image': playlist.get('artwork_url', '').replace('-large', '-t500x500') if playlist.get('artwork_url') else None,
+            #             'track_count': playlist.get('track_count', 0),
+            #             'url': playlist['permalink_url'],
+            #             'service': 'soundcloud'
+            #         }
+            #         for playlist in service_results
+            #     ]
         except Exception as e:
             logger.error(f"Error getting playlists for {service_type}: {str(e)}")
     
@@ -286,33 +287,33 @@ def get_playlist_tracks(user, playlist_id, service_type, limit=50):
                 for item in service_results['items'] if item['track'] is not None
             ]
         
-        elif service_type == 'apple' and 'error' not in service_results and 'data' in service_results:
-            return [
-                {
-                    'id': track['id'],
-                    'title': track['attributes']['name'],
-                    'artist': track['attributes']['artistName'],
-                    'album': track['attributes']['albumName'],
-                    'album_art': track['attributes']['artwork']['url'].replace('{w}', '300').replace('{h}', '300'),
-                    'url': track['attributes'].get('url', ''),
-                    'service': 'apple'
-                }
-                for track in service_results['data']
-            ]
+        # elif service_type == 'apple' and 'error' not in service_results and 'data' in service_results:
+        #     return [
+        #         {
+        #             'id': track['id'],
+        #             'title': track['attributes']['name'],
+        #             'artist': track['attributes']['artistName'],
+        #             'album': track['attributes']['albumName'],
+        #             'album_art': track['attributes']['artwork']['url'].replace('{w}', '300').replace('{h}', '300'),
+        #             'url': track['attributes'].get('url', ''),
+        #             'service': 'apple'
+        #         }
+        #         for track in service_results['data']
+        #     ]
         
-        elif service_type == 'soundcloud' and 'error' not in service_results and 'items' in service_results:
-            return [
-                {
-                    'id': str(track['id']),
-                    'title': track['title'],
-                    'artist': track['user']['username'],
-                    'album': track.get('release_title', ''),
-                    'album_art': track.get('artwork_url', '').replace('-large', '-t500x500') if track.get('artwork_url') else None,
-                    'url': track['permalink_url'],
-                    'service': 'soundcloud'
-                }
-                for track in service_results['items']
-            ]
+        # elif service_type == 'soundcloud' and 'error' not in service_results and 'items' in service_results:
+        #     return [
+        #         {
+        #             'id': str(track['id']),
+        #             'title': track['title'],
+        #             'artist': track['user']['username'],
+        #             'album': track.get('release_title', ''),
+        #             'album_art': track.get('artwork_url', '').replace('-large', '-t500x500') if track.get('artwork_url') else None,
+        #             'url': track['permalink_url'],
+        #             'service': 'soundcloud'
+        #         }
+        #         for track in service_results['items']
+        #     ]
     except Exception as e:
         logger.error(f"Error getting playlist tracks for {service_type}: {str(e)}")
     
@@ -355,32 +356,32 @@ def get_track_details(user, track_id, service_type):
                 'service': 'spotify'
             }
         
-        elif service_type == 'apple' and 'error' not in service_results and 'data' in service_results:
-            track = service_results['data'][0]  # Apple Music returns an array
-            return {
-                'id': track['id'],
-                'title': track['attributes']['name'],
-                'artist': track['attributes']['artistName'],
-                'album': track['attributes']['albumName'],
-                'album_art': track['attributes']['artwork']['url'].replace('{w}', '300').replace('{h}', '300'),
-                'url': track['attributes'].get('url', ''),
-                'preview_url': track['attributes'].get('previews', [{}])[0].get('url', None),
-                'duration_ms': track['attributes'].get('durationInMillis', 0),
-                'service': 'apple'
-            }
+        # elif service_type == 'apple' and 'error' not in service_results and 'data' in service_results:
+        #     track = service_results['data'][0]  # Apple Music returns an array
+        #     return {
+        #         'id': track['id'],
+        #         'title': track['attributes']['name'],
+        #         'artist': track['attributes']['artistName'],
+        #         'album': track['attributes']['albumName'],
+        #         'album_art': track['attributes']['artwork']['url'].replace('{w}', '300').replace('{h}', '300'),
+        #         'url': track['attributes'].get('url', ''),
+        #         'preview_url': track['attributes'].get('previews', [{}])[0].get('url', None),
+        #         'duration_ms': track['attributes'].get('durationInMillis', 0),
+        #         'service': 'apple'
+        #     }
         
-        elif service_type == 'soundcloud' and 'error' not in service_results:
-            return {
-                'id': str(service_results['id']),
-                'title': service_results['title'],
-                'artist': service_results['user']['username'],
-                'album': service_results.get('release_title', ''),
-                'album_art': service_results.get('artwork_url', '').replace('-large', '-t500x500') if service_results.get('artwork_url') else None,
-                'url': service_results['permalink_url'],
-                'preview_url': service_results.get('stream_url', None),
-                'duration_ms': service_results.get('duration', 0),
-                'service': 'soundcloud'
-            }
+        # elif service_type == 'soundcloud' and 'error' not in service_results:
+        #     return {
+        #         'id': str(service_results['id']),
+        #         'title': service_results['title'],
+        #         'artist': service_results['user']['username'],
+        #         'album': service_results.get('release_title', ''),
+        #         'album_art': service_results.get('artwork_url', '').replace('-large', '-t500x500') if service_results.get('artwork_url') else None,
+        #         'url': service_results['permalink_url'],
+        #         'preview_url': service_results.get('stream_url', None),
+        #         'duration_ms': service_results.get('duration', 0),
+        #         'service': 'soundcloud'
+        #     }
     except Exception as e:
         logger.error(f"Error getting track details for {service_type}: {str(e)}")
     
@@ -428,35 +429,35 @@ def get_saved_tracks(user, service_type=None, limit=50, offset=0):
                     for item in service_results['items']
                 ]
             
-            elif service_type == 'apple' and 'error' not in service_results and 'data' in service_results:
-                results['apple'] = [
-                    {
-                        'id': track['id'],
-                        'title': track['attributes']['name'],
-                        'artist': track['attributes']['artistName'],
-                        'album': track['attributes']['albumName'],
-                        'album_art': track['attributes']['artwork']['url'].replace('{w}', '300').replace('{h}', '300'),
-                        'url': track['attributes'].get('url', ''),
-                        'added_at': track['attributes'].get('dateAdded', ''),
-                        'service': 'apple'
-                    }
-                    for track in service_results['data']
-                ]
+            # elif service_type == 'apple' and 'error' not in service_results and 'data' in service_results:
+            #     results['apple'] = [
+            #         {
+            #             'id': track['id'],
+            #             'title': track['attributes']['name'],
+            #             'artist': track['attributes']['artistName'],
+            #             'album': track['attributes']['albumName'],
+            #             'album_art': track['attributes']['artwork']['url'].replace('{w}', '300').replace('{h}', '300'),
+            #             'url': track['attributes'].get('url', ''),
+            #             'added_at': track['attributes'].get('dateAdded', ''),
+            #             'service': 'apple'
+            #         }
+            #         for track in service_results['data']
+            #     ]
             
-            elif service_type == 'soundcloud' and 'error' not in service_results:
-                results['soundcloud'] = [
-                    {
-                        'id': str(track['id']),
-                        'title': track['title'],
-                        'artist': track['user']['username'],
-                        'album': track.get('release_title', ''),
-                        'album_art': track.get('artwork_url', '').replace('-large', '-t500x500') if track.get('artwork_url') else None,
-                        'url': track['permalink_url'],
-                        'added_at': track.get('created_at', ''),
-                        'service': 'soundcloud'
-                    }
-                    for track in service_results
-                ]
+            # elif service_type == 'soundcloud' and 'error' not in service_results:
+            #     results['soundcloud'] = [
+            #         {
+            #             'id': str(track['id']),
+            #             'title': track['title'],
+            #             'artist': track['user']['username'],
+            #             'album': track.get('release_title', ''),
+            #             'album_art': track.get('artwork_url', '').replace('-large', '-t500x500') if track.get('artwork_url') else None,
+            #             'url': track['permalink_url'],
+            #             'added_at': track.get('created_at', ''),
+            #             'service': 'soundcloud'
+            #         }
+            #         for track in service_results
+            #     ]
         except Exception as e:
             logger.error(f"Error getting saved tracks for {service_type}: {str(e)}")
     

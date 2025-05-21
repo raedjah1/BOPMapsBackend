@@ -10,4 +10,6 @@ router.register(r'user-achievements', UserAchievementViewSet, basename='user-ach
 
 urlpatterns = [
     path('', include(router.urls)),
-] 
+]
+
+app_name = 'gamification' 

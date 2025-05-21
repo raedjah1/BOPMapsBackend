@@ -70,7 +70,6 @@ celerybeat.pid
 
 # Virtual Environment
 venv/
-venv_py311/
 ENV/
 env.bak/
 venv.bak/

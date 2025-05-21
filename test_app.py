@@ -14,24 +14,25 @@ def home(request):
     """)
 
 
-settings.configure(
-    DEBUG=True,
-    SECRET_KEY='test_secret_key',
-    ROOT_URLCONF=__name__,
-    MIDDLEWARE=[
-        'django.middleware.security.SecurityMiddleware',
-        'django.contrib.sessions.middleware.SessionMiddleware',
-        'django.middleware.common.CommonMiddleware',
-        'django.middleware.csrf.CsrfViewMiddleware',
-        'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    ],
-    INSTALLED_APPS=[
-        'django.contrib.auth',
-        'django.contrib.contenttypes',
-        'django.contrib.sessions',
-        'django.contrib.messages',
-    ],
-)
+if not settings.configured:
+    settings.configure(
+        DEBUG=True,
+        SECRET_KEY='test_secret_key',
+        ROOT_URLCONF=__name__,
+        MIDDLEWARE=[
+            'django.middleware.security.SecurityMiddleware',
+            'django.contrib.sessions.middleware.SessionMiddleware',
+            'django.middleware.common.CommonMiddleware',
+            'django.middleware.csrf.CsrfViewMiddleware',
+            'django.middleware.clickjacking.XFrameOptionsMiddleware',
+        ],
+        INSTALLED_APPS=[
+            'django.contrib.auth',
+            'django.contrib.contenttypes',
+            'django.contrib.sessions',
+            'django.contrib.messages',
+        ],
+    )
 
 urlpatterns = [
     path('', home),

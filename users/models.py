@@ -8,6 +8,9 @@ from bopmaps.models import TimeStampedModel, ValidationModelMixin
 from bopmaps.validators import username_validator, ImageDimensionsValidator
 import logging
 
+# Forward declaration for PinSkin, actual import later to avoid circular dependency if any
+# from gamification.models import PinSkin # This line might cause issues if gamification.models imports User
+
 logger = logging.getLogger('bopmaps')
 
 class User(AbstractUser, ValidationModelMixin):
@@ -75,6 +78,13 @@ class User(AbstractUser, ValidationModelMixin):
     # Stats
     pins_created = models.PositiveIntegerField(default=0)
     pins_collected = models.PositiveIntegerField(default=0)
+    current_pin_skin = models.ForeignKey(
+        'gamification.PinSkin', 
+        null=True, 
+        blank=True, 
+        on_delete=models.SET_NULL, 
+        related_name='users_equipped'
+    )
     
     class Meta:
         verbose_name = 'User'

@@ -6,6 +6,8 @@ from .views import (
     PasswordResetRequestView, PasswordResetConfirmView, logout_view
 )
 
+app_name = 'users'
+
 # Create a router for viewsets
 router = DefaultRouter()
 router.register(r'', UserViewSet)

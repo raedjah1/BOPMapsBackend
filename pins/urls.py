@@ -4,8 +4,10 @@ from .views import PinViewSet, PinInteractionViewSet
 
 # Create a router for viewsets
 router = DefaultRouter()
-router.register(r'', PinViewSet)
-router.register(r'interactions', PinInteractionViewSet)
+# Register PinInteractionViewSet first with a specific basename
+router.register(r'interactions', PinInteractionViewSet, basename='pininteraction')
+# Register PinViewSet after with an explicit basename
+router.register(r'', PinViewSet, basename='pin')
 
 urlpatterns = [
     # ViewSet routes
