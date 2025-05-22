@@ -219,3 +219,73 @@ class PinAnalytics(models.Model):
         
         analytics.save()
         return analytics
+
+
+class Collection(models.Model):
+    """
+    Model representing a user collection of pins
+    """
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='collections'
+    )
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True, null=True)
+    is_public = models.BooleanField(default=True)
+    primary_color = models.CharField(max_length=20, blank=True, null=True)
+    
+    # Store multiple cover images
+    cover_image_urls = ArrayField(models.URLField(), default=list, blank=True)
+    
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=['created_at']),
+            models.Index(fields=['is_public']),
+        ]
+    
+    def __str__(self):
+        return f"{self.name} by {self.owner.username}"
+    
+    @property
+    def item_count(self):
+        """Get count of pins in this collection"""
+        return self.collection_pins.count()
+    
+    @property
+    def last_updated(self):
+        """Get the last update time (either collection update or when pins were added/removed)"""
+        latest_pin = self.collection_pins.order_by('-added_at').first()
+        if latest_pin and latest_pin.added_at > self.updated_at:
+            return latest_pin.added_at
+        return self.updated_at
+
+
+class CollectionPin(models.Model):
+    """
+    Model for linking pins to collections (many-to-many relationship)
+    """
+    collection = models.ForeignKey(
+        Collection,
+        on_delete=models.CASCADE,
+        related_name='collection_pins'
+    )
+    pin = models.ForeignKey(
+        Pin,
+        on_delete=models.CASCADE,
+        related_name='pin_collections'
+    )
+    added_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        unique_together = ('collection', 'pin')
+        indexes = [
+            models.Index(fields=['added_at']),
+        ]
+        
+    def __str__(self):
+        return f"{self.pin.title} in {self.collection.name}"

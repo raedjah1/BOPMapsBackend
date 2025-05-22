@@ -28,7 +28,7 @@ urlpatterns = [
     path('connect/', connect_services, name='connect-services'),
     
     # OAuth flow endpoints
-    path('auth/spotify/', spotify_auth, name='spotify-auth'),
+    path('auth/spotify/', spotify_mobile_auth, name='spotify-auth'),
     path('auth/spotify/mobile/', spotify_mobile_auth, name='spotify-mobile-auth'),
     path('auth/spotify/callback/', spotify_callback, name='spotify-callback'),
     path('auth/success/', connection_success, name='connection-success'),

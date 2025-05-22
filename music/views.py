@@ -8,7 +8,7 @@ from django.views.decorators.http import require_http_methods
 from rest_framework import viewsets, status, serializers
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.contrib.auth import get_user_model, login
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.shortcuts import redirect
@@ -111,7 +111,7 @@ def spotify_auth(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def spotify_mobile_auth(request):
     """Start Spotify OAuth flow for mobile apps"""
     # Create a mock request to pass to get_auth_url with mobile redirect URI
@@ -247,7 +247,7 @@ def spotify_callback(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def callback_handler(request):
     """
     Handle OAuth callback from mobile app

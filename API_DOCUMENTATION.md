@@ -10,10 +10,11 @@ For a more detailed and interactive documentation, you can use the Swagger UI at
 2. [Users](#users)
 3. [Pins](#pins)
 4. [Pin Interactions](#pin-interactions)
-5. [Friends](#friends)
-6. [Music Integration](#music-integration)
-7. [Gamification](#gamification)
-8. [Geo Services](#geo-services)
+5. [Collections](#collections)
+6. [Friends](#friends)
+7. [Music Integration](#music-integration)
+8. [Gamification](#gamification)
+9. [Geo Services](#geo-services)
 
 ## Authentication
 
@@ -630,6 +631,236 @@ BOPMaps uses JWT (JSON Web Tokens) for authentication. All authenticated endpoin
   "interaction_type": "like",
   "created_at": "2023-04-06T12:34:56Z"
 }
+```
+
+## Collections
+
+This section covers endpoints related to user collections of pins.
+
+### List Collections
+
+**Endpoint:** `GET /api/pins/collections/`
+
+**Description:** Get a list of all public collections and the current user's private collections.
+
+**Response:**
+```json
+[
+  {
+    "id": "collection_id",
+    "name": "Collection Name",
+    "description": "Collection Description",
+    "is_public": true,
+    "primary_color": "#1DB954",
+    "cover_image_urls": [
+      "https://example.com/image1.jpg",
+      "https://example.com/image2.jpg"
+    ],
+    "created_at": "2023-04-06T12:34:56Z",
+    "updated_at": "2023-04-06T12:34:56Z",
+    "owner": "user_id",
+    "owner_name": "username",
+    "item_count": 10,
+    "last_updated": "2023-04-06T12:34:56Z"
+  }
+]
+```
+
+### Get Collection
+
+**Endpoint:** `GET /api/pins/collections/{collection_id}/`
+
+**Description:** Get a specific collection's details including its pins.
+
+**Response:**
+```json
+{
+  "id": "collection_id",
+  "name": "Collection Name",
+  "description": "Collection Description",
+  "is_public": true,
+  "primary_color": "#1DB954",
+  "cover_image_urls": [
+    "https://example.com/image1.jpg",
+    "https://example.com/image2.jpg"
+  ],
+  "created_at": "2023-04-06T12:34:56Z",
+  "updated_at": "2023-04-06T12:34:56Z",
+  "owner": "user_id",
+  "owner_name": "username",
+  "item_count": 10,
+  "last_updated": "2023-04-06T12:34:56Z",
+  "pins": [
+    {
+      "id": "collection_pin_id",
+      "pin": "pin_id",
+      "pin_details": {
+        "id": "pin_id",
+        "owner": {
+          "id": "user_id",
+          "username": "username"
+        },
+        "title": "Pin Title",
+        "description": "Pin Description",
+        "track_title": "Song Title",
+        "track_artist": "Artist Name",
+        "album": "Album Name",
+        "track_url": "https://music-service.com/track",
+        "service": "spotify",
+        "rarity": "common",
+        // ... other pin fields
+      },
+      "added_at": "2023-04-06T12:34:56Z"
+    }
+  ]
+}
+```
+
+### Create Collection
+
+**Endpoint:** `POST /api/pins/collections/`
+
+**Description:** Create a new collection.
+
+**Request:**
+```json
+{
+  "name": "New Collection",
+  "description": "Collection Description",
+  "is_public": true,
+  "primary_color": "#1DB954",
+  "cover_image_urls": [
+    "https://example.com/image1.jpg"
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "id": "new_collection_id",
+  "name": "New Collection",
+  "description": "Collection Description",
+  "is_public": true,
+  "primary_color": "#1DB954",
+  "cover_image_urls": [
+    "https://example.com/image1.jpg"
+  ],
+  "created_at": "2023-04-06T12:34:56Z",
+  "updated_at": "2023-04-06T12:34:56Z",
+  "owner": "user_id",
+  "owner_name": "username",
+  "item_count": 0,
+  "last_updated": "2023-04-06T12:34:56Z"
+}
+```
+
+### Update Collection
+
+**Endpoint:** `PUT /api/pins/collections/{collection_id}/`
+
+**Description:** Update an existing collection (owner only).
+
+**Request:**
+```json
+{
+  "name": "Updated Collection Name",
+  "description": "Updated Description",
+  "is_public": false,
+  "primary_color": "#FC3C44"
+}
+```
+
+**Response:**
+```json
+{
+  "id": "collection_id",
+  "name": "Updated Collection Name",
+  "description": "Updated Description",
+  "is_public": false,
+  "primary_color": "#FC3C44",
+  // ... other collection fields
+}
+```
+
+### Delete Collection
+
+**Endpoint:** `DELETE /api/pins/collections/{collection_id}/`
+
+**Description:** Delete a collection (owner only).
+
+**Response:**
+- `204 No Content` if successful
+
+### Add Pin to Collection
+
+**Endpoint:** `POST /api/pins/collections/{collection_id}/add_pin/`
+
+**Description:** Add a pin to a collection (owner only).
+
+**Request:**
+```json
+{
+  "pin_id": "pin_id"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "created": true,
+  "message": "Pin added to collection."
+}
+```
+
+### Remove Pin from Collection
+
+**Endpoint:** `POST /api/pins/collections/{collection_id}/remove_pin/`
+
+**Description:** Remove a pin from a collection (owner only).
+
+**Request:**
+```json
+{
+  "pin_id": "pin_id"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Pin removed from collection."
+}
+```
+
+### List User's Collections
+
+**Endpoint:** `GET /api/pins/collections/my_collections/`
+
+**Description:** Get all collections owned by the current user.
+
+**Response:**
+```json
+[
+  {
+    "id": "collection_id",
+    "name": "Collection Name",
+    "description": "Collection Description",
+    "is_public": true,
+    "primary_color": "#1DB954",
+    "cover_image_urls": [
+      "https://example.com/image1.jpg"
+    ],
+    "created_at": "2023-04-06T12:34:56Z",
+    "updated_at": "2023-04-06T12:34:56Z",
+    "owner": "user_id",
+    "owner_name": "username",
+    "item_count": 10,
+    "last_updated": "2023-04-06T12:34:56Z"
+  }
+]
 ```
 
 ## Friends

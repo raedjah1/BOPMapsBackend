@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from rest_framework_gis.serializers import GeoFeatureModelSerializer
-from .models import Pin, PinInteraction
+from .models import Pin, PinInteraction, Collection, CollectionPin
 from users.serializers import UserSerializer
 from gamification.serializers import PinSkinSerializer
 from bopmaps.serializers import BaseSerializer, TimeStampedModelSerializer
@@ -228,3 +228,43 @@ class PinInteractionSerializer(BaseSerializer):
         except Exception as e:
             logger.error(f"Error creating pin interaction: {str(e)}")
             raise 
+
+class CollectionPinSerializer(serializers.ModelSerializer):
+    """Serializer for CollectionPin model"""
+    pin_details = PinSerializer(source='pin', read_only=True)
+    
+    class Meta:
+        model = CollectionPin
+        fields = ['id', 'pin', 'pin_details', 'added_at']
+        read_only_fields = ['added_at']
+
+class CollectionSerializer(serializers.ModelSerializer):
+    """Serializer for Collection model"""
+    owner_name = serializers.CharField(source='owner.username', read_only=True)
+    item_count = serializers.IntegerField(read_only=True)
+    last_updated = serializers.DateTimeField(read_only=True)
+    
+    class Meta:
+        model = Collection
+        fields = [
+            'id', 'name', 'description', 'is_public', 'primary_color',
+            'cover_image_urls', 'created_at', 'updated_at', 
+            'owner', 'owner_name', 'item_count', 'last_updated'
+        ]
+        read_only_fields = ['created_at', 'updated_at', 'owner']
+    
+    def create(self, validated_data):
+        # Set the owner to the current user
+        validated_data['owner'] = self.context['request'].user
+        return super().create(validated_data)
+
+class CollectionDetailSerializer(CollectionSerializer):
+    """Detailed Collection serializer with pins"""
+    pins = serializers.SerializerMethodField()
+    
+    class Meta(CollectionSerializer.Meta):
+        fields = CollectionSerializer.Meta.fields + ['pins']
+    
+    def get_pins(self, obj):
+        collection_pins = obj.collection_pins.all().order_by('-added_at')
+        return CollectionPinSerializer(collection_pins, many=True).data 

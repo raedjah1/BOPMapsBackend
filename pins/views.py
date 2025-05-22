@@ -10,8 +10,11 @@ from rest_framework.permissions import IsAuthenticated
 from datetime import timedelta
 from django.conf import settings
 
-from .models import Pin, PinInteraction
-from .serializers import PinSerializer, PinGeoSerializer, PinInteractionSerializer
+from .models import Pin, PinInteraction, Collection, CollectionPin
+from .serializers import (
+    PinSerializer, PinGeoSerializer, PinInteractionSerializer, 
+    CollectionSerializer, CollectionDetailSerializer, CollectionPinSerializer
+)
 from .utils import get_nearby_pins, record_pin_interaction, get_trending_pins, check_pin_visibility, get_clustered_pins
 
 from bopmaps.views import BaseModelViewSet
@@ -386,3 +389,172 @@ class PinInteractionViewSet(mixins.CreateModelMixin,
         except Exception as e:
             logger.error(f"Error creating pin interaction: {str(e)}")
             raise
+
+
+class CollectionViewSet(BaseModelViewSet):
+    """
+    API viewset for Collection CRUD operations
+    """
+    queryset = Collection.objects.all()
+    serializer_class = CollectionSerializer
+    permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
+    
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            return CollectionDetailSerializer
+        return CollectionSerializer
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        
+        # Filter based on visibility (only show user's own private collections)
+        if self.action in ['list']:
+            queryset = queryset.filter(
+                models.Q(is_public=True) | 
+                models.Q(owner=self.request.user)
+            )
+        
+        # Add annotated item_count
+        queryset = queryset.annotate(
+            item_count=models.Count('collection_pins')
+        )
+            
+        return queryset
+    
+    def retrieve(self, request, *args, **kwargs):
+        """
+        Custom retrieve to check collection visibility before returning detail.
+        Returns 404 if the collection is private and not owned by the requesting user.
+        """
+        try:
+            instance = self.get_object()
+            # Check if the collection should be visible to this user
+            if instance.is_public == False and instance.owner != request.user:
+                return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+            serializer = self.get_serializer(instance)
+            return Response(serializer.data)
+        except Exception as e:
+            logger.error(f"Error retrieving collection: {str(e)}")
+            return create_error_response(str(e), status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['post'])
+    def add_pin(self, request, pk=None):
+        """
+        Add a pin to a collection
+        """
+        try:
+            collection = self.get_object()
+            
+            # Only the owner can add pins
+            if collection.owner != request.user:
+                return Response(
+                    {"detail": "You do not have permission to add pins to this collection."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Get the pin ID from request data
+            pin_id = request.data.get('pin_id')
+            if not pin_id:
+                return Response(
+                    {"detail": "Pin ID is required."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Check if the pin exists
+            try:
+                pin = Pin.objects.get(id=pin_id)
+            except Pin.DoesNotExist:
+                return Response(
+                    {"detail": "Pin not found."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Check if the pin can be added to the collection
+            if not pin.is_public and pin.owner != request.user:
+                return Response(
+                    {"detail": "You cannot add a private pin that you don't own."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Add the pin to the collection (if not already added)
+            collection_pin, created = CollectionPin.objects.get_or_create(
+                collection=collection,
+                pin=pin
+            )
+            
+            # Record a collect interaction if pin was added
+            if created:
+                record_pin_interaction(
+                    user=request.user,
+                    pin=pin,
+                    interaction_type='collect'
+                )
+            
+            return Response({
+                "success": True,
+                "created": created,
+                "message": "Pin added to collection." if created else "Pin already in collection."
+            })
+            
+        except Exception as e:
+            logger.error(f"Error adding pin to collection: {str(e)}")
+            return create_error_response(str(e), status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['post'])
+    def remove_pin(self, request, pk=None):
+        """
+        Remove a pin from a collection
+        """
+        try:
+            collection = self.get_object()
+            
+            # Only the owner can remove pins
+            if collection.owner != request.user:
+                return Response(
+                    {"detail": "You do not have permission to remove pins from this collection."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Get the pin ID from request data
+            pin_id = request.data.get('pin_id')
+            if not pin_id:
+                return Response(
+                    {"detail": "Pin ID is required."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Try to find and delete the collection pin
+            deleted, _ = CollectionPin.objects.filter(
+                collection=collection,
+                pin_id=pin_id
+            ).delete()
+            
+            if deleted:
+                return Response({
+                    "success": True,
+                    "message": "Pin removed from collection."
+                })
+            else:
+                return Response({
+                    "success": False,
+                    "message": "Pin was not in collection."
+                })
+            
+        except Exception as e:
+            logger.error(f"Error removing pin from collection: {str(e)}")
+            return create_error_response(str(e), status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=False, methods=['get'])
+    def my_collections(self, request):
+        """
+        Get only the current user's collections
+        """
+        try:
+            collections = Collection.objects.filter(owner=request.user).annotate(
+                item_count=models.Count('collection_pins')
+            )
+            serializer = self.get_serializer(collections, many=True)
+            return Response(serializer.data)
+        except Exception as e:
+            logger.error(f"Error retrieving user collections: {str(e)}")
+            return create_error_response(str(e), status.HTTP_500_INTERNAL_SERVER_ERROR)
