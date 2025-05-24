@@ -42,13 +42,19 @@ class RegionViewSet(viewsets.ReadOnlyModelViewSet):
         
         if all([north, south, east, west]):
             try:
-                # Create a polygon from the bounds
-                bounds = Polygon.from_bbox((
-                    float(west), float(south), float(east), float(north)
-                ))
+                # Convert to float
+                north = float(north)
+                south = float(south)
+                east = float(east)
+                west = float(west)
                 
-                # Find regions that intersect with this polygon
-                queryset = queryset.filter(bounds__intersects=bounds)
+                # Find regions that overlap with this bounding box
+                queryset = queryset.filter(
+                    north__gte=south,  # Region's north edge is above the south bound
+                    south__lte=north,  # Region's south edge is below the north bound
+                    east__gte=west,    # Region's east edge is right of the west bound
+                    west__lte=east     # Region's west edge is left of the east bound
+                )
                 
             except (ValueError, TypeError) as e:
                 pass

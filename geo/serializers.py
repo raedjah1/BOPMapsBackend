@@ -96,22 +96,22 @@ class ParkSerializer(GeoFeatureModelSerializer):
         return super().to_representation(instance)
 
 
-class CachedRegionSerializer(GeoFeatureModelSerializer):
+class CachedRegionSerializer(serializers.ModelSerializer):
     """
-    Serializer for CachedRegion model with GeoJSON support
+    Serializer for CachedRegion model
     """
     size_mb = serializers.SerializerMethodField()
     bundle_url = serializers.SerializerMethodField()
     
     class Meta:
         model = CachedRegion
-        geo_field = 'bounds'
         fields = ('id', 'name', 'north', 'south', 'east', 'west',
                  'min_zoom', 'max_zoom', 'created_at', 'last_accessed',
                  'access_count', 'size_mb', 'bundle_url')
                  
     def get_size_mb(self, obj):
-        return round(obj.size_kb / 1024, 2)
+        """Convert size from bytes to MB"""
+        return round(obj.size_bytes / (1024 * 1024), 2)
         
     def get_bundle_url(self, obj):
         request = self.context.get('request')

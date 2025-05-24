@@ -301,7 +301,7 @@ def create_region_bundle(self, north, south, east, west, min_zoom=10, max_zoom=1
                         zipf.write(file_path, rel_path)
                         
             # Get file size
-            size_kb = os.path.getsize(zip_filename) // 1024
+            size_bytes = os.path.getsize(zip_filename)
             
             # Create CachedRegion record
             region = CachedRegion.objects.create(
@@ -312,8 +312,7 @@ def create_region_bundle(self, north, south, east, west, min_zoom=10, max_zoom=1
                 west=float(west),
                 min_zoom=int(min_zoom),
                 max_zoom=int(max_zoom),
-                bounds=bounds,
-                size_kb=size_kb
+                size_bytes=size_bytes
             )
             
             # Attach bundle file
